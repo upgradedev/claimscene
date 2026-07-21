@@ -104,23 +104,49 @@ def build_storage() -> StorageBackend:
     return InMemoryStorage()
 
 
+def _vlm_keys_present() -> bool:
+    if os.environ.get("GMI_API_KEY"):
+        return True
+    return bool(os.environ.get("NEBIUS_INFERENCE_API_KEY")
+                and os.environ.get("NEBIUS_INFERENCE_BASE_URL"))
+
+
+def vlm_ready() -> bool:
+    """True when the live VLM ladder can be constructed (key + openai pkg)."""
+    return (mode() == "live" and _vlm_keys_present()
+            and importlib.util.find_spec("openai") is not None)
+
+
 def build_extractor() -> VisionExtractor:
-    # The live VLM adapter (GMI chat VLM or Nebius Qwen2.5-VL — TBD by probe)
-    # lands in the next phase; until then live mode degrades with a warning.
+    if vlm_ready():
+        from .adapters.vlm_extractor import VlmExtractor
+
+        return VlmExtractor()
     if mode() == "live":
         _log.warning(
-            "CLAIMSCENE_MODE=live but no live vision extractor is wired yet; "
-            "using the offline deterministic extractor."
+            "CLAIMSCENE_MODE=live but the VLM ladder is not ready (need "
+            "GMI_API_KEY or NEBIUS_INFERENCE_* plus the openai package — "
+            "pip install claimscene[live]); using the offline deterministic "
+            "extractor."
         )
     return FakeVisionExtractor()
 
 
+def provider_ready() -> bool:
+    """True when the live Genblaze provider can be constructed (key + SDK)."""
+    return (mode() == "live" and bool(os.environ.get("GMI_API_KEY"))
+            and importlib.util.find_spec("genblaze_gmicloud") is not None)
+
+
 def build_provider() -> MediaProvider:
-    # The live Genblaze provider adapter lands in the next phase; until then
-    # live mode degrades with a warning.
+    if provider_ready():
+        from .adapters.genblaze_provider import GenblazeMediaProvider
+
+        return GenblazeMediaProvider()
     if mode() == "live":
         _log.warning(
-            "CLAIMSCENE_MODE=live but no live media provider is wired yet; "
-            "using the offline media provider."
+            "CLAIMSCENE_MODE=live but the Genblaze provider is not ready "
+            "(need GMI_API_KEY plus the genblaze SDK — pip install "
+            "claimscene[live]); using the offline media provider."
         )
     return FakeMediaProvider()

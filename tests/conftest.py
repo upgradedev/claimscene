@@ -68,5 +68,7 @@ def fake_s3() -> FakeS3:
 def clean_b2_env(monkeypatch) -> None:
     for name in ("B2_BUCKET_NAME", "B2_S3_ENDPOINT", "B2_ENDPOINT_URL",
                  "B2_APPLICATION_KEY_ID", "B2_KEY_ID", "B2_APPLICATION_KEY",
-                 "B2_APP_KEY", "B2_KEY_PREFIX", "B2_PREFIX", "CLAIMSCENE_MODE"):
+                 "B2_APP_KEY", "B2_KEY_PREFIX", "B2_PREFIX", "CLAIMSCENE_MODE",
+                 "GMI_API_KEY", "GMI_SERVING_BASE_URL",
+                 "NEBIUS_INFERENCE_API_KEY", "NEBIUS_INFERENCE_BASE_URL"):
         monkeypatch.delenv(name, raising=False)

@@ -1,7 +1,7 @@
 from claimscene.adapters.fakes import _scene_left_cross, _scene_rear_end
 from claimscene.layout import LayoutEngine
 from claimscene.provenance import DISCLOSURE
-from claimscene.report import build_report, illustration_prompt
+from claimscene.report import build_report, illustration_prompt, illustration_still_prompt
 
 
 def test_report_is_deterministic_and_carries_disclosure():
@@ -41,5 +41,24 @@ def test_illustration_prompt_deterministic_and_self_disclosing():
     a = illustration_prompt(scene)
     assert a == illustration_prompt(scene)
     assert DISCLOSURE in a
-    assert "silver car" in a and "green van" in a
+    assert "silver toy car" in a and "green toy van" in a
     assert "non-photorealistic" in a
+
+
+def test_prompts_stay_in_the_moderation_safe_diorama_register():
+    """Both generation prompts must keep the toy-diorama framing
+    (probe-verified to pass content moderation) and depict no people."""
+    scene = _scene_rear_end()
+    for prompt in (illustration_still_prompt(scene), illustration_prompt(scene)):
+        assert "Miniature diecast toy car diorama" in prompt
+        assert "no people, no injuries" in prompt
+        assert "non-photorealistic" in prompt
+
+
+def test_still_prompt_describes_vehicles_and_damage():
+    scene = _scene_rear_end()
+    a = illustration_still_prompt(scene)
+    assert a == illustration_still_prompt(scene)
+    assert "blue toy car" in a and "red toy car" in a
+    assert "crush mark at its 6 o'clock (rear)" in a
+    assert DISCLOSURE not in a  # the overlay instruction belongs to the clip

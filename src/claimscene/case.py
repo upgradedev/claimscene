@@ -43,4 +43,8 @@ class CaseSpec(BaseModel):
     case_id: str = Field(min_length=1, max_length=64)
     photos: list[CasePhoto] = Field(min_length=1)
     context: str | None = None
-    illustration_model: str = "Kling-v3-I2V"
+    # Establish-shot still, then the still feeds the image-to-video clip.
+    # pixverse is the budget default; Kling-Image2Video-V2.1-Master is the
+    # premium option (both on GMI Cloud via Genblaze).
+    illustration_still_model: str = "seedream-5.0-lite"
+    illustration_model: str = "pixverse-v6-i2v"

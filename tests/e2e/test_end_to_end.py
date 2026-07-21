@@ -45,7 +45,7 @@ def test_full_chain_verifies(run):
     manifest = json.loads(storage.get(result.artifacts["manifest"].key))
     assert verify_manifest(manifest)
     for name in ("scene_graph", "timeline", "report", "illustration",
-                 "schematic_svg", "schematic_hero"):
+                 "illustration_still", "schematic_svg", "schematic_hero"):
         data = storage.get(result.artifacts[name].key)
         assert verify_artifact(manifest, name, data), name
 
@@ -66,8 +66,36 @@ def test_index_lists_every_artifact(run):
     index_keys = {row["key"] for row in storage.index}
     for ref in result.artifacts.values():
         assert ref.key in index_keys
-    # 3 inputs + 7 artifacts (no animation with animate=False)
-    assert len(index_keys) == 10
+    # 3 inputs + 8 artifacts (no animation with animate=False)
+    assert len(index_keys) == 11
+
+
+def test_illustration_layer_sealed_with_still_and_clip(run):
+    """Work item: the illustration section must honestly record the two-step
+    generative layer — still model/prompt/hash + clip model/prompt/hash +
+    provider + degraded flag — and both artifacts must be in storage."""
+    storage, result = run
+    manifest = json.loads(storage.get(result.artifacts["manifest"].key))
+    ill = manifest["illustration"]
+    for field in ("provider", "model", "prompt", "sha256",
+                  "still_model", "still_prompt", "still_sha256", "degraded"):
+        assert field in ill, field
+    assert ill["degraded"] is True  # offline fakes must never claim otherwise
+    assert ill["model"] == "pixverse-v6-i2v"
+    assert ill["still_model"] == "seedream-5.0-lite"
+    assert verify_artifact(manifest, "illustration_still",
+                           storage.get(result.artifacts["illustration_still"].key))
+
+
+def test_input_attribution_fields_survive_to_manifest(run):
+    storage, result = run
+    manifest = json.loads(storage.get(result.artifacts["manifest"].key))
+    rows = manifest["inputs"]
+    assert len(rows) == 3
+    for row in rows:
+        assert row["source"] == "staged_demo"
+        assert set(row) == {"filename", "sha256", "media_type", "role",
+                            "source", "attribution", "license"}
 
 
 def test_scene_and_timeline_json_load_back_validated(run):

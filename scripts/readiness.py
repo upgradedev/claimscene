@@ -17,8 +17,10 @@ on observable behaviour. A check is one of:
   * ``user-gated`` — genuinely needs a human-held credential / live deploy;
                      excluded from the automatable % and listed for the user.
 
-Foundation phase: CI runs this NON-GATING (``--min 0``) but prints and
-archives the score; the threshold is hardened in a later phase.
+Phase 2: the live adapters landed (VLM ladder, Genblaze provider, measured
+eval scoreboard, committed live-illustration evidence), so CI now runs this
+GATING at ``--min 95``. Remaining user-gated items (live deploy, entitled B2
+bucket) are listed for the user and excluded from the automatable score.
 
 Run:
     python scripts/readiness.py                 # human report + readiness.json
@@ -51,7 +53,15 @@ _PNG_1x1 = (
 _B2_ENV = ("B2_BUCKET_NAME", "B2_S3_ENDPOINT", "B2_ENDPOINT_URL",
            "B2_APPLICATION_KEY_ID", "B2_KEY_ID", "B2_APPLICATION_KEY",
            "B2_APP_KEY", "B2_KEY_PREFIX", "B2_PREFIX", "GMI_API_KEY",
-           "NEBIUS_INFERENCE_API_KEY")
+           "GMI_SERVING_BASE_URL", "NEBIUS_INFERENCE_API_KEY",
+           "NEBIUS_INFERENCE_BASE_URL")
+
+_EVAL_SCENARIOS_DIR = _REPO_ROOT / "eval" / "scenarios"
+_EVAL_RESULTS_DIR = _REPO_ROOT / "eval" / "results"
+_EVIDENCE_DIR = _REPO_ROOT / "eval" / "evidence" / "live_illustration"
+#: Minimum committed extraction accuracy the gate accepts (measured, honest).
+_EVAL_FLOOR_PCT = 60.0
+_MAX_EVAL_IMAGE_BYTES = 300 * 1024
 
 
 # ── check + criterion model ──────────────────────────────────────────────────
@@ -197,6 +207,103 @@ def check_utility_constrained_vocabulary() -> tuple[bool, str]:
     return True, "extra fields, unknown enums, bad clocks, ghost refs all rejected"
 
 
+def check_utility_vlm_adapter_constrained() -> tuple[bool, str]:
+    """The live VLM adapter enforces the vocabulary: an invalid reply gets
+    exactly one repair round-trip and the result validates as a SceneGraph.
+    Driven through the real adapter with a canned transport (no network)."""
+    import json as _json
+    from types import SimpleNamespace
+
+    from claimscene.adapters.vlm_extractor import VlmExtractor, VlmRung
+    from claimscene.case import CasePhoto, PhotoSource
+    from claimscene.scene import SceneGraph
+
+    valid = {
+        "schema": "claimscene/scene/v1",
+        "road": {"layout": "straight", "lanes_per_direction": 1,
+                 "signal": "none"},
+        "vehicles": [{"id": "veh_a", "kind": "car", "color": "red",
+                      "damage": [{"clock_position": 12, "severity": "dent"}]}],
+        "movements": [{"vehicle_id": "veh_a", "approach": "N",
+                       "maneuver": "straight", "speed_band": "low"}],
+        "impacts": [{"vehicle_id": "veh_a", "clock_position": 12}],
+        "sequence": ["impact"],
+    }
+    invalid = dict(valid, gps=[38.0, 23.7])  # hallucinated field
+    replies = [_json.dumps(invalid), _json.dumps(valid)]
+    calls: list[dict] = []
+
+    class _Client:
+        class chat:  # noqa: N801 - mirrors the OpenAI client shape
+            class completions:  # noqa: N801
+                @staticmethod
+                def create(**kwargs):
+                    calls.append(kwargs)
+                    return SimpleNamespace(choices=[SimpleNamespace(
+                        message=SimpleNamespace(content=replies.pop(0)))])
+
+    rung = VlmRung(name="stub", base_url="https://stub.test", api_key="k",
+                   model="stub-model")
+    extractor = VlmExtractor([rung], client_factory=lambda b, k: _Client())
+    scene = extractor.extract([CasePhoto(filename="p.png", data=_PNG_1x1,
+                                         source=PhotoSource.staged_demo)])
+    if not isinstance(scene, SceneGraph):
+        return False, "adapter did not return a SceneGraph"
+    if len(calls) != 2:
+        return False, f"expected 1 repair round-trip, saw {len(calls)} calls"
+    if "gps" not in str(calls[1]["messages"][-1]):
+        return False, "repair feedback did not carry the validator errors"
+    if not any("vlm" in n.lower() for n in scene.confidence_notes):
+        return False, "extraction provenance note missing"
+    return True, ("hallucinated field rejected → one repair round-trip → "
+                  "validated SceneGraph (real adapter, canned transport)")
+
+
+def check_utility_eval_scoreboard_floor() -> tuple[bool, str]:
+    """The committed eval set + scoreboard are real, consistent and above the
+    accuracy floor: >=6 scenarios, images present and lean, truths validate,
+    measured overall accuracy >= floor, prompt version recorded."""
+    from claimscene.scene import SceneGraph
+
+    manifest_path = _EVAL_SCENARIOS_DIR / "manifest.json"
+    if not manifest_path.exists():
+        return False, "eval/scenarios/manifest.json missing"
+    manifest = json.loads(manifest_path.read_text("utf-8"))
+    scenarios = manifest.get("scenarios", [])
+    if len(scenarios) < 6:
+        return False, f"only {len(scenarios)} scenarios (need >=6)"
+    if manifest.get("image_source") != "synthetic_generated":
+        return False, "eval images must be sealed as synthetic_generated"
+    for spec in scenarios:
+        SceneGraph.model_validate(spec["truth"])  # raises on drift
+        for name in spec["images"]:
+            path = _EVAL_SCENARIOS_DIR / spec["id"] / name
+            if not path.exists():
+                return False, f"missing eval image {spec['id']}/{name}"
+            if path.stat().st_size > _MAX_EVAL_IMAGE_BYTES:
+                return False, f"eval image too large: {spec['id']}/{name}"
+
+    boards = sorted(_EVAL_RESULTS_DIR.glob("*_extraction_eval*.json"))
+    if not boards:
+        return False, "no committed scoreboard in eval/results/"
+    board = json.loads(boards[-1].read_text("utf-8"))
+    if board.get("schema") != "claimscene/extraction-eval/v1":
+        return False, "scoreboard schema mismatch"
+    if len(board.get("prompt_sha256", "")) != 64:
+        return False, "scoreboard does not record the prompt version"
+    headline = board.get("headline", {}).get("overall_pct")
+    if not isinstance(headline, int | float) or headline < _EVAL_FLOOR_PCT:
+        return False, f"headline accuracy {headline} below floor {_EVAL_FLOOR_PCT}"
+    scored_ids = {s["id"] for rep in board["models"].values()
+                  for s in rep["scenarios"]}
+    manifest_ids = {s["id"] for s in scenarios}
+    if scored_ids != manifest_ids:
+        return False, "scoreboard scenarios do not match the committed set"
+    return True, (f"{len(scenarios)} scenarios sealed + scored: headline "
+                  f"{headline}% (floor {_EVAL_FLOOR_PCT}%), "
+                  f"{boards[-1].name}")
+
+
 def check_prod_live_no_creds_degrades() -> tuple[bool, str]:
     """CLAIMSCENE_MODE=live with no creds still seals a full case (no crash)."""
     saved = {name: os.environ.pop(name, None) for name in _B2_ENV}
@@ -318,6 +425,123 @@ def check_genblaze_illustration_port_sealed() -> tuple[bool, str]:
     return True, "illustration sealed with provider/model/prompt + honest degraded flag"
 
 
+def check_genblaze_sdk_contract() -> tuple[bool, str]:
+    """The real Genblaze adapter drives a REAL genblaze_core Pipeline (the
+    SDK's own mock provider) and the input-attachment path holds: the step
+    the provider receives carries the input Asset, hosted content-addressed
+    through the same backend, and the sealed run manifest verifies."""
+    import hashlib as _hashlib
+
+    try:
+        from genblaze_core.models.asset import Asset as GbAsset
+        from genblaze_core.storage.base import StorageBackend
+        from genblaze_core.testing import MockProvider
+    except ImportError:
+        return False, ("genblaze-core not installed (it is in "
+                       "requirements-dev.txt; CI installs it)")
+
+    from claimscene.adapters.genblaze_provider import GenblazeMediaProvider
+
+    class MemBackend(StorageBackend):
+        _PREFIX = "memory://bucket/"
+
+        def __init__(self) -> None:
+            self.store: dict[str, bytes] = {}
+
+        def put(self, key, data, *, content_type=None, metadata=None,
+                extra_args=None):
+            self.store[key] = (bytes(data)
+                               if isinstance(data, bytes | bytearray)
+                               else data.read())
+            return key
+
+        def get(self, key):
+            return self.store[key]
+
+        def exists(self, key):
+            return key in self.store
+
+        def delete(self, key):
+            self.store.pop(key, None)
+
+        def get_url(self, key, *, expires_in=3600):
+            return self.get_durable_url(key)
+
+        def get_durable_url(self, key):
+            return f"{self._PREFIX}{key}"
+
+        def key_from_url(self, url):
+            return url[len(self._PREFIX):] if url.startswith(self._PREFIX) else None
+
+    clip = b"READINESS-CLIP" + b"\x05\x06" * 300
+    backend = MemBackend()
+    backend.put("assets/clip.mp4", clip)
+    provider = MockProvider(name="mock-media", assets=[GbAsset(
+        url=backend.get_durable_url("assets/clip.mp4"), media_type="video/mp4",
+        sha256=_hashlib.sha256(clip).hexdigest(), size_bytes=len(clip))])
+    adapter = GenblazeMediaProvider(
+        video_provider_obj=provider, backend=backend,
+        downloader=lambda _u: (_ for _ in ()).throw(
+            AssertionError("must read back through the backend")))
+
+    photo = _PNG_1x1 + b"readiness-input"
+    out = adapter.generate(model="pixverse-v6-i2v", prompt="orbit",
+                           inputs=[photo])
+    if out != clip:
+        return False, "bytes did not round-trip through the real Pipeline"
+    step = provider.received_steps[-1]
+    if len(step.inputs) != 1:
+        return False, "input Asset was dropped before reaching the provider"
+    if step.inputs[0].sha256 != _hashlib.sha256(photo).hexdigest():
+        return False, "input Asset lost its content hash"
+    if backend.key_from_url(step.inputs[0].url) is None:
+        return False, "input was not hosted through the storage backend"
+    if adapter.last_manifest is None or not adapter.last_manifest.verify_hash():
+        return False, "Genblaze run manifest missing or unverifiable"
+    return True, ("real Pipeline + ObjectStorageSink round-trip; input Asset "
+                  "attached, content-addressed + sha-sealed; run manifest "
+                  "verifies")
+
+
+def check_genblaze_live_illustration_evidence() -> tuple[bool, str]:
+    """A real illustration (still + clip) was generated live and committed
+    with its sealed case manifest; the committed bytes must re-hash to the
+    sealed values, degraded must be False, and the scene must carry the live
+    VLM provenance note (not the offline-fixture note)."""
+    from claimscene.provenance import verify_artifact, verify_manifest
+    from claimscene.scene import scene_from_json
+
+    manifest_path = _EVIDENCE_DIR / "manifest.json"
+    if not manifest_path.exists():
+        return False, "eval/evidence/live_illustration/manifest.json missing"
+    manifest = json.loads(manifest_path.read_text("utf-8"))
+    if not verify_manifest(manifest):
+        return False, "evidence manifest seal is broken"
+    ill = manifest.get("illustration", {})
+    if ill.get("degraded") is not False:
+        return False, "evidence illustration is not degraded=False"
+    if ill.get("provider") != "genblaze":
+        return False, f"evidence provider is {ill.get('provider')!r}"
+    for artifact, filename in (("illustration", "illustration.mp4"),
+                               ("illustration_still", "illustration.png"),
+                               ("scene_graph", "scene.json")):
+        path = _EVIDENCE_DIR / filename
+        if not path.exists():
+            return False, f"evidence file {filename} missing"
+        if not verify_artifact(manifest, artifact, path.read_bytes()):
+            return False, f"{filename} does not re-hash to its sealed value"
+    scene = scene_from_json((_EVIDENCE_DIR / "scene.json").read_bytes())
+    notes = " ".join(scene.confidence_notes).lower()
+    if "no vlm was called" in notes:
+        return False, "evidence scene came from the offline fixture extractor"
+    if "live vlm" not in notes:
+        return False, "evidence scene lacks the live-VLM provenance note"
+    return True, ("committed still+clip re-hash to the sealed manifest; "
+                  f"degraded=False via provider 'genblaze', models "
+                  f"{ill.get('still_model')} + {ill.get('model')}; scene "
+                  "extracted by the live VLM ladder")
+
+
 def check_security_traversal_safe_keys() -> tuple[bool, str]:
     from claimscene.adapters.fakes import (
         FakeMediaProvider,
@@ -406,6 +630,12 @@ def build_criteria() -> list[Criterion]:
             Check("utility.constrained_vocabulary",
                   "Constrained vocabulary rejects hallucinated/free-form output",
                   2, run=check_utility_constrained_vocabulary),
+            Check("utility.vlm_adapter_constrained",
+                  "Live VLM adapter: repair loop + vocabulary gate (canned transport)",
+                  2, run=check_utility_vlm_adapter_constrained),
+            Check("utility.eval_scoreboard_floor",
+                  "Committed eval set + measured accuracy above the floor",
+                  2, run=check_utility_eval_scoreboard_floor),
         ]),
         Criterion("production", "Production Readiness", [
             Check("production.live_no_creds_degrades",
@@ -430,25 +660,21 @@ def build_criteria() -> list[Criterion]:
             Check("b2.live_objects_written",
                   "Real case objects written to the live B2 bucket",
                   2, user_gated=True,
-                  gate_detail="TODO (next phase): create the claimscene B2 bucket, "
-                  "run one live case with a write-entitled application key, and "
-                  "confirm the objects + index.jsonl in the bucket."),
+                  gate_detail="TODO (user): create the claimscene B2 bucket + an "
+                  "application key with PutObject entitlement (the current env "
+                  "key failed the Genblaze sink transfer on 2026-07-21), run one "
+                  "live case, confirm objects + index.jsonl in the bucket."),
         ]),
         Criterion("genblaze", "Use of Genblaze", [
             Check("genblaze.illustration_port_sealed",
                   "Illustration wired through the provider port; provenance sealed",
                   2, run=check_genblaze_illustration_port_sealed),
             Check("genblaze.sdk_adapter",
-                  "Real Genblaze SDK adapter drives the illustration step",
-                  2, user_gated=True,
-                  gate_detail="TODO (next phase): port the GenblazeMediaProvider "
-                  "adapter (genblaze_core Pipeline + per-asset SHA-256 manifest) "
-                  "from the shared Cinemory foundation and contract-test it."),
+                  "Real Genblaze SDK adapter drives a real Pipeline + attaches inputs",
+                  2, run=check_genblaze_sdk_contract),
             Check("genblaze.live_illustration",
-                  "A real illustration clip generated live (degraded=false)",
-                  2, user_gated=True,
-                  gate_detail="TODO (user): top up the GMI Cloud balance, then run "
-                  "one live case and confirm illustration.degraded=false."),
+                  "Committed live still+clip evidence re-hashes to its sealed manifest",
+                  2, run=check_genblaze_live_illustration_evidence),
         ]),
         Criterion("security", "Application Security", [
             Check("security.traversal_safe_keys",
