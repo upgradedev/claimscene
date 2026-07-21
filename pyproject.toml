@@ -35,7 +35,9 @@ claimscene = "claimscene.cli:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+# "." keeps `tests.conftest` importable under bare `pytest tests/e2e` too
+# (CI invokes per-tier paths; without cwd on sys.path the package import fails).
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 addopts = "-q"
 markers = [
