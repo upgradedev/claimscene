@@ -20,7 +20,7 @@ from .provenance import (
     input_record,
     sha256_bytes,
 )
-from .report import build_report, illustration_prompt
+from .report import build_report, illustration_prompt, illustration_still_prompt
 from .scene import SceneGraph, scene_to_json, semantic_warnings
 from .schematic import PillowSchematicRenderer
 
@@ -54,6 +54,7 @@ _KIND_BY_ARTIFACT = {
     "schematic_svg": "schematic",
     "schematic_hero": "schematic",
     "schematic_animation": "schematic",
+    "illustration_still": "illustration",
     "illustration": "illustration",
     "report": "report",
     "manifest": "manifest",
@@ -135,11 +136,23 @@ class CasePipeline:
             self._store(result, "schematic_animation", "schematic",
                         "schematic.mp4", art.animation_mp4, "video/mp4")
 
-        # 5. Cinematic illustration (generative, explicitly sealed as such).
+        # 5. Illustration (generative, explicitly sealed as such), two steps:
+        #    an establish-shot still, then an image-to-video clip chained from
+        #    that still (the provider reuses the still's hosted URL live).
+        still_prompt = illustration_still_prompt(scene)
+        still = self.provider.generate(
+            model=spec.illustration_still_model, prompt=still_prompt,
+            modality="image",
+            params={"size": "2K", "output_format": "png", "max_images": 1,
+                    "watermark": False},
+        )
+        self._store(result, "illustration_still", "illustration",
+                    "illustration.png", still, "image/png")
         prompt = illustration_prompt(scene)
         illustration = self.provider.generate(
-            model=spec.illustration_model, prompt=prompt, inputs=[art.hero_png],
-            params={"aspect_ratio": "16:9", "duration_s": timeline.duration_s},
+            model=spec.illustration_model, prompt=prompt, modality="video",
+            inputs=[still],
+            params={"duration": 5, "quality": "360p"},
         )
         self._store(result, "illustration", "illustration", "illustration.mp4",
                     illustration, "video/mp4")
@@ -177,6 +190,9 @@ class CasePipeline:
                 "model": spec.illustration_model,
                 "prompt": prompt,
                 "sha256": result.artifacts["illustration"].sha256,
+                "still_model": spec.illustration_still_model,
+                "still_prompt": still_prompt,
+                "still_sha256": result.artifacts["illustration_still"].sha256,
                 "degraded": degraded,
             },
             report_sha256=result.artifacts["report"].sha256,

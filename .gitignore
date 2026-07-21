@@ -20,6 +20,9 @@ venv/
 # Generated pipeline output
 out/
 *.mp4
+# Committed evidence exceptions: the live-illustration proof clip is sealed
+# by hash in eval/evidence (verified by the readiness gate).
+!eval/evidence/**/*.mp4
 
 # Readiness gate output (regenerated each run; archived as a CI artifact)
 readiness.json
@@ -36,5 +39,11 @@ readiness.json
 *.heic
 *.png
 !tests/golden/**
+# The eval set + live evidence are SYNTHETIC seedream renders of toy
+# dioramas (source: synthetic_generated, sealed in eval/scenarios/manifest
+# .json and eval/evidence) — the only imagery this repo may carry.
+!eval/scenarios/**/*.jpg
+!eval/evidence/**/*.png
 private/
 real-photos/
+eval/scenarios/_spend.json

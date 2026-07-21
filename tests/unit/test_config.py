@@ -53,3 +53,45 @@ def test_offline_builds_fakes_silently(clean_b2_env, caplog):
         storage = config.build_storage()
     assert isinstance(storage, InMemoryStorage)
     assert not caplog.records
+
+
+def test_live_with_keys_and_sdks_builds_live_adapters(clean_b2_env, monkeypatch):
+    import importlib.util as ilu
+
+    monkeypatch.setenv("CLAIMSCENE_MODE", "live")
+    monkeypatch.setenv("GMI_API_KEY", "test-key")
+    real_find_spec = ilu.find_spec
+    monkeypatch.setattr(
+        ilu, "find_spec",
+        lambda name, *a: object() if name in ("openai", "genblaze_gmicloud")
+        else real_find_spec(name, *a))
+
+    from claimscene.adapters.genblaze_provider import GenblazeMediaProvider
+    from claimscene.adapters.vlm_extractor import VlmExtractor
+
+    assert config.vlm_ready() and config.provider_ready()
+    extractor = config.build_extractor()
+    provider = config.build_provider()
+    assert isinstance(extractor, VlmExtractor)
+    assert [r.model for r in extractor.rungs] == [
+        "google/gemma-4-31b-it", "google/gemini-3.5-flash"]
+    assert isinstance(provider, GenblazeMediaProvider)
+
+
+def test_live_key_without_sdk_degrades_with_actionable_warning(
+        clean_b2_env, monkeypatch, caplog):
+    import importlib.util as ilu
+
+    monkeypatch.setenv("CLAIMSCENE_MODE", "live")
+    monkeypatch.setenv("GMI_API_KEY", "test-key")
+    real_find_spec = ilu.find_spec
+    monkeypatch.setattr(
+        ilu, "find_spec",
+        lambda name, *a: None if name in ("openai", "genblaze_gmicloud")
+        else real_find_spec(name, *a))
+    with caplog.at_level("WARNING", logger="claimscene.config"):
+        extractor = config.build_extractor()
+        provider = config.build_provider()
+    assert isinstance(extractor, FakeVisionExtractor)
+    assert isinstance(provider, FakeMediaProvider)
+    assert sum("claimscene[live]" in r.message for r in caplog.records) == 2

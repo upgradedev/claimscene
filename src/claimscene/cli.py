@@ -30,6 +30,7 @@ _OUT_FILES = {
     "schematic_svg": "schematic.svg",
     "schematic_hero": "schematic.png",
     "schematic_animation": "schematic.mp4",
+    "illustration_still": "illustration.png",
     "illustration": "illustration.mp4",
     "report": "report.md",
     "manifest": "manifest.json",
@@ -143,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     ok = verify_manifest(result.manifest)
     print(f"  manifest seal          : {'PASS' if ok else 'FAIL'}")
     checks = ["scene_graph", "timeline", "report", "illustration",
-              "schematic_svg", "schematic_hero"]
+              "illustration_still", "schematic_svg", "schematic_hero"]
     if "schematic_animation" in result.artifacts:
         checks.append("schematic_animation")
     for name in checks:

@@ -126,11 +126,13 @@ def build_report(scene: SceneGraph, timeline: Timeline, *, case_id: str,
     return "\n".join(lines)
 
 
-def illustration_prompt(scene: SceneGraph) -> str:
-    """Deterministic prompt for the cinematic illustration clip.
+def _diorama_scene_description(scene: SceneGraph) -> str:
+    """The shared miniature-diorama scene wording (still + clip prompts).
 
-    Built only from the constrained vocabulary; always ends with the
-    self-disclosing instruction.
+    Deterministic, built only from the constrained vocabulary, and kept in
+    the toy-diorama register on purpose: it is unmistakably an illustration
+    (self-disclosing), it depicts no people and no injuries, and it passes
+    generative-model content moderation cleanly (probe-verified).
     """
     road = scene.road
     movements = {m.vehicle_id: m for m in scene.movements}
@@ -138,17 +140,47 @@ def illustration_prompt(scene: SceneGraph) -> str:
     for v in scene.vehicles:
         m = movements.get(v.id)
         if m is None or m.maneuver.value == "parked":
-            parts.append(f"a parked {v.color.value} {v.kind.value}")
+            phrase = f"a parked {v.color.value} toy {v.kind.value}"
         else:
-            parts.append(
-                f"a {v.color.value} {v.kind.value} from the {m.approach.value} "
-                f"{_MANEUVER_WORDS[m.maneuver.value]} {_SPEED_WORDS[m.speed_band.value]}"
+            phrase = (
+                f"a {v.color.value} toy {v.kind.value} that arrived from the "
+                f"{m.approach.value}, {_MANEUVER_WORDS[m.maneuver.value]} "
+                f"{_SPEED_WORDS[m.speed_band.value]}"
             )
-    setting = _LAYOUT_WORDS[road.layout.value]
+        for dz in v.damage:
+            phrase += (
+                f", with a {dz.severity.value} mark at its "
+                f"{_CLOCK_WORDS[dz.clock_position]}"
+            )
+        parts.append(phrase)
     return (
-        "Cinematic aerial reenactment illustration, stylized and clearly "
-        f"non-photorealistic: {'; '.join(parts)}; at {setting} with "
-        f"{_SIGNAL_WORDS[road.signal]}. "
-        "Render as an obvious artistic illustration. "
+        "Miniature diecast toy car diorama on a printed road play mat showing "
+        f"{_LAYOUT_WORDS[scene.road.layout.value]} with "
+        f"{_SIGNAL_WORDS[road.signal]}: " + "; ".join(parts) + ". "
+        "Tabletop scale-model scene, studio product photography, softbox "
+        "lighting, no people, no injuries, collectible toy scale models."
+    )
+
+
+def illustration_still_prompt(scene: SceneGraph) -> str:
+    """Deterministic prompt for the establish-shot still (text → image)."""
+    return (
+        "Stylized, clearly non-photorealistic illustration. "
+        + _diorama_scene_description(scene)
+        + " Slightly elevated three-quarter view of the whole scene."
+    )
+
+
+def illustration_prompt(scene: SceneGraph) -> str:
+    """Deterministic prompt for the illustration clip (still → video).
+
+    Built only from the constrained vocabulary; always ends with the
+    self-disclosing instruction.
+    """
+    return (
+        "Slow smooth camera orbit around this miniature toy car diorama, an "
+        "obvious artistic illustration, clearly non-photorealistic. "
+        + _diorama_scene_description(scene)
+        + " The toy vehicles stay perfectly still; gentle parallax only. "
         f"Overlay text: '{DISCLOSURE}'."
     )

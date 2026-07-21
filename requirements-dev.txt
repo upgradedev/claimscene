@@ -2,3 +2,7 @@
 pytest>=8.0
 ruff>=0.4
 pip-audit>=2.7
+# Real Genblaze SDK core (pure-Python, no credentials) so the SDK-boundary
+# contract tests in tests/integration/test_genblaze_contract.py actually RUN
+# in CI — guarding the adapter against Genblaze API drift.
+genblaze-core>=0.3.4,<0.4

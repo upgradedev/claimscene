@@ -32,10 +32,24 @@ def test_user_gated_items_are_surfaced_not_hidden():
     readiness = _load_readiness()
     report = readiness.evaluate()
     gated_ids = {g["id"] for g in report["user_gated"]}
-    assert {"production.live_deploy", "b2.live_objects_written",
-            "genblaze.sdk_adapter", "genblaze.live_illustration"} <= gated_ids
+    # Phase 2 converted the genblaze checks to automatable real evidence;
+    # only genuinely human-held items may remain user-gated.
+    assert gated_ids == {"production.live_deploy", "b2.live_objects_written"}
     for g in report["user_gated"]:
         assert g["action"].startswith("TODO"), g["id"]
+
+
+def test_phase2_checks_are_automatable_real_evidence():
+    readiness = _load_readiness()
+    report = readiness.evaluate()
+    checks = {c["id"]: c for crit in report["criteria"] for c in crit["checks"]}
+    for check_id in ("utility.vlm_adapter_constrained",
+                     "utility.eval_scoreboard_floor",
+                     "genblaze.sdk_adapter",
+                     "genblaze.live_illustration"):
+        assert checks[check_id]["automatable"], check_id
+        assert checks[check_id]["status"] == "pass", (
+            check_id, checks[check_id]["detail"])
 
 
 def test_report_schema_and_criteria_cover_the_thesis():

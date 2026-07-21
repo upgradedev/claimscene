@@ -17,10 +17,13 @@ dependencies = [
 
 [project.optional-dependencies]
 # Real backends (add credentials to use). boto3 backs the Backblaze B2
-# storage adapter; the Genblaze provider adapter lands in the next phase and
-# will pull genblaze[gmicloud] here.
+# storage adapter; genblaze[gmicloud] backs the illustration provider
+# (GMI Cloud + B2 ObjectStorageSink); openai backs the OpenAI-compatible
+# VLM ladder client (GMI serving + Nebius inference).
 live = [
     "boto3>=1.34",
+    "genblaze[gmicloud]>=0.4,<0.5",
+    "openai>=1.30",
 ]
 # Future HTTP API / demo server seam.
 server = [
@@ -42,6 +45,7 @@ testpaths = ["tests"]
 addopts = "-q"
 markers = [
     "ffmpeg: tests that need a real ffmpeg binary on PATH (skipped otherwise)",
+    "live: tests that call paid live endpoints (skipped without GMI_API_KEY; excluded from CI)",
 ]
 
 [tool.ruff]

@@ -34,7 +34,11 @@ class VisionExtractor(Protocol):
 
 @runtime_checkable
 class MediaProvider(Protocol):
-    """A generative-media backend (the cinematic illustration clip)."""
+    """A generative-media backend (illustration still + clip).
+
+    ``modality`` selects the operation: ``"image"`` for the establish-shot
+    still, ``"video"`` for the illustration clip.
+    """
 
     name: str
 
@@ -43,6 +47,7 @@ class MediaProvider(Protocol):
         *,
         model: str,
         prompt: str,
+        modality: str = "video",
         inputs: list[bytes] | None = None,
         params: dict | None = None,
     ) -> bytes:

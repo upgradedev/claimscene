@@ -95,6 +95,7 @@ _ARTIFACT_PATHS = {
     "timeline": ("timeline", "sha256"),
     "report": ("report", "sha256"),
     "illustration": ("illustration", "sha256"),
+    "illustration_still": ("illustration", "still_sha256"),
     "schematic_svg": ("schematic", "static_svg_sha256"),
     "schematic_hero": ("schematic", "hero_png_sha256"),
     "schematic_animation": ("schematic", "animation_sha256"),

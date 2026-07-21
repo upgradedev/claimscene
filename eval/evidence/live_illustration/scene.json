@@ -1,0 +1,66 @@
+{
+  "schema": "claimscene/scene/v1",
+  "road": {
+    "layout": "straight",
+    "lanes_per_direction": 1,
+    "signal": "traffic_light"
+  },
+  "vehicles": [
+    {
+      "id": "veh_blue",
+      "kind": "car",
+      "color": "blue",
+      "damage": [
+        {
+          "clock_position": 6,
+          "severity": "dent",
+          "note": "rear bumper damage"
+        }
+      ]
+    },
+    {
+      "id": "veh_red",
+      "kind": "car",
+      "color": "red",
+      "damage": [
+        {
+          "clock_position": 12,
+          "severity": "crush",
+          "note": "front end crushed"
+        }
+      ]
+    }
+  ],
+  "movements": [
+    {
+      "vehicle_id": "veh_blue",
+      "approach": "N",
+      "maneuver": "straight",
+      "speed_band": "stopped"
+    },
+    {
+      "vehicle_id": "veh_red",
+      "approach": "N",
+      "maneuver": "straight",
+      "speed_band": "moderate"
+    }
+  ],
+  "impacts": [
+    {
+      "vehicle_id": "veh_blue",
+      "clock_position": 6
+    },
+    {
+      "vehicle_id": "veh_red",
+      "clock_position": 12
+    }
+  ],
+  "sequence": [
+    "vehicles_approach",
+    "impact",
+    "vehicles_come_to_rest"
+  ],
+  "confidence_notes": [
+    "scene extracted by live VLM ladder rung 'gmi:google/gemma-4-31b-it' (model google/gemma-4-31b-it); constrained-vocabulary validation passed"
+  ]
+}

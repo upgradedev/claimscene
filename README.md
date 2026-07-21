@@ -22,9 +22,11 @@ every case into two layers and never lets them blur:
    (enums, clock positions, speed *bands* — never coordinates). Deterministic
    code turns that into geometry, an animated schematic, and a report. Same
    input, same bytes, every time.
-2. **The illustration layer.** A generative video clip, watermarked in its
-   prompt and sealed in the manifest as an illustration. The `degraded` flag
-   honestly records whether a real provider generated it.
+2. **The illustration layer.** A generative establish-shot still plus a
+   short video clip chained from it, both prompted in a deliberately
+   non-photorealistic miniature-diorama register, watermarked in the prompt
+   and sealed in the manifest as an illustration. The `degraded` flag
+   honestly records whether a real provider generated them.
 
 A tamper-evident manifest chains both layers, every input photo (with its
 `source`, `attribution`, and `license`), and every hash. Re-badge a licensed
@@ -64,9 +66,9 @@ flowchart LR
     PIPE --- MP{{"MediaProvider port"}}
     PIPE --- SB{{"StorageBackend port"}}
     PIPE --- RD{{"Renderer port"}}
-    VE -->|"CLAIMSCENE_MODE=live<br/>(next phase: GMI chat VLM or<br/>Nebius Qwen2.5-VL — TBD by probe)"| VEL["Live VLM adapter"]
+    VE -->|"CLAIMSCENE_MODE=live"| VEL["VlmExtractor — model ladder<br/>gemma-4-31b-it → gemini-3.5-flash →<br/>Nebius Qwen2.5-VL · strict JSON ·<br/>1 repair round-trip on validation errors"]
     VE -->|"otherwise — CI / offline demo"| VEF["FakeVisionExtractor<br/>deterministic scene fixtures<br/>from input hashes"]
-    MP -->|"live (next phase:<br/>Genblaze SDK + GMI Cloud)"| MPL["GenblazeMediaProvider"]
+    MP -->|"live (Genblaze SDK + GMI Cloud)"| MPL["GenblazeMediaProvider<br/>seedream still → pixverse/Kling clip<br/>(still's hosted URL chains into the clip)"]
     MP -->|"otherwise"| MPF["FakeMediaProvider<br/>deterministic bytes"]
     SB -->|"live + boto3 + B2 creds"| B2S["B2Storage — boto3, S3-compatible<br/>durable index.jsonl (multi-instance safe)"]
     SB -->|"otherwise"| IMS["InMemoryStorage<br/>identical index surface"]
@@ -117,8 +119,8 @@ python scripts/readiness.py --min 0
   synthetic_generated`, plus optional `attribution` and `license` strings.
 - `scene_graph`, `timeline`, `report` — hashes of the factual layer.
 - `schematic` — SVG/PNG/MP4 hashes, frame count, and the watermark string.
-- `illustration` — provider, model, full prompt, hash, and the honest
-  `degraded` flag.
+- `illustration` — provider, clip model/prompt/hash, still
+  model/prompt/hash, and the honest `degraded` flag.
 - `disclosure` — the exact string `AI-generated illustration — not evidence`.
 - `manifest_hash` — canonical-JSON SHA-256 over all of the above. Any edit,
   including re-badging an input's source, breaks verification.
@@ -140,34 +142,76 @@ accepted): `B2_BUCKET_NAME`, `B2_S3_ENDPOINT`, `B2_APPLICATION_KEY_ID`,
 
 ## AI providers and models used
 
-| Stage | Planned (live, next phase) | Today (offline foundation) |
+| Stage | Live (`CLAIMSCENE_MODE=live`) | Offline (default, CI) |
 |---|---|---|
-| Scene extraction (VLM) | GMI chat VLM **or** Nebius `Qwen2.5-VL` — TBD by probe | `FakeVisionExtractor` (deterministic fixtures) |
-| Illustration clip | `Kling-v3-I2V` via Genblaze + GMI Cloud | `FakeMediaProvider` (deterministic bytes) |
-| Illustration stills | `seedream-5.0-lite` via GMI Cloud | not wired |
+| Scene extraction (VLM ladder) | GMI `google/gemma-4-31b-it` (primary) → GMI `google/gemini-3.5-flash` (fallback) → Nebius `Qwen/Qwen2.5-VL-72B-Instruct` (independent-provider fallback) | `FakeVisionExtractor` (deterministic fixtures) |
+| Establish-shot still | `seedream-5.0-lite` via Genblaze + GMI Cloud | `FakeMediaProvider` (deterministic bytes) |
+| Illustration clip (image-to-video from the still) | `pixverse-v6-i2v` (default) or `Kling-Image2Video-V2.1-Master` (premium) via Genblaze + GMI Cloud | `FakeMediaProvider` (deterministic bytes) |
 | Schematic + layout + report | none — deterministic code by design | same code (no LLM anywhere) |
 
-The factual layer never touches a generative model. That is the point.
+The ladder falls through on rate limits and transport errors (retry with
+backoff first), and every reply must pass the constrained SceneGraph
+validator; an invalid reply gets exactly one repair round-trip with the
+validator's errors before the next rung takes over. The factual layer never
+touches a generative model. That is the point.
+
+## Measured extraction accuracy
+
+The primary VLM (`google/gemma-4-31b-it`) scores **100% weighted
+field accuracy** on the committed 7-scenario eval set (vehicle count, kind,
+color, road layout, signal, approach, maneuver, damage and impact clock
+positions within one hour). The fallback rung `google/gemini-3.5-flash`
+also scored 100% on every scenario it actually answered, but GMI rate
+limits (429) zeroed two of its seven scenarios during the run, so its
+committed number is 71.4% — a capacity figure, not an accuracy one; the
+failures are recorded in the scoreboard JSON. This is exactly why the
+ladder exists and why gemma is the primary. The dated scoreboard lives in
+`eval/results/` and the readiness gate fails the build if a committed
+scoreboard ever drops below 60%.
+
+How the eval works, and what it does not claim: each scenario in
+`eval/scenarios/` is a staged toy-diorama photo set (three seedream-rendered
+views kept consistent through reference-image chaining) plus a short
+claimant-style context note. We authored the generation prompts and the
+ground-truth SceneGraph together, so the set is self-consistent by
+construction. That makes it a fair test of "can the extractor read a staged
+scene into the constrained vocabulary", and nothing more. It is synthetic,
+clean, and small; real phone photos of real accidents (glare, rain, night,
+clutter, partial views) will score lower. Compass directions are resolvable
+only because the context note supplies them, which mirrors the product's
+actual input surface (photos plus the claimant's statement). Rerun it
+yourself: `python scripts/eval_extraction.py --live` (a few cents of VLM
+tokens; scenario regeneration via `scripts/generate_eval_scenarios.py` costs
+about $0.74 at $0.035/image).
 
 ## Synthetic-data policy
 
 No real accident photos, people, plates, or personal data enter this repo.
 Demo inputs are synthetic images generated by the CLI (`source:
-synthetic_generated`) or staged photos (`source: staged_demo`). The
-`.gitignore` blocks common photo formats and a `private/` directory as a
+synthetic_generated`) or staged photos (`source: staged_demo`). The only
+imagery committed here is the eval set and the live-illustration evidence:
+seedream renders of toy dioramas, sealed as `synthetic_generated` with
+their generation prompts in `eval/scenarios/manifest.json`. The
+`.gitignore` blocks all other photo formats and a `private/` directory as a
 belt-and-braces guard. Real deployments record real sources in the sealed
 manifest instead of pretending they do not exist.
 
 ## Testing & CI
 
-- 108 offline tests (unit / integration / e2e): schema round-trips and
+- 150+ offline tests (unit / integration / e2e): schema round-trips and
   rejection of hallucinated fields, layout determinism and contact-geometry
   properties, golden-file SVG, provenance seal/tamper, real B2 adapter
-  against an S3 stub, pipeline e2e, CLI smoke, readiness gate.
+  against an S3 stub, VLM ladder + repair loop against canned transports,
+  the extraction-accuracy scorer, Genblaze SDK-boundary contract tests
+  (the SDK's own mock provider through a real `Pipeline`, including the
+  input-attachment assertions that a silent regression would otherwise
+  hide), pipeline e2e, CLI smoke, readiness gate.
 - CI (GitHub Actions): gitleaks v8.18.4 secret scan first, then ruff,
-  pytest, pip-audit, and the readiness gate (non-gating during the
-  foundation phase; the score is printed and archived).
-- ffmpeg tests skip cleanly when ffmpeg is absent.
+  pytest, pip-audit, and the readiness gate, now GATING at `--min 95`
+  (real-evidence checks include re-hashing the committed live-illustration
+  evidence and enforcing the eval-scoreboard floor).
+- ffmpeg tests skip cleanly when ffmpeg is absent; `@pytest.mark.live`
+  smokes run only when `GMI_API_KEY` is present (never in CI).
 
 ## Shared foundation disclosure
 
@@ -186,28 +230,44 @@ src/claimscene/
   case.py           case inputs with per-photo source attribution
   layout.py         deterministic LayoutEngine → typed keyframe Timeline
   schematic.py      blueprint SVG + PNG frames + MP4 renderer (watermarked)
-  report.py         deterministic report + self-disclosing illustration prompt
+  report.py         deterministic report + self-disclosing illustration prompts
   provenance.py     manifest v1: build / seal / verify / per-artifact hashes
+  evaluation.py     extraction-accuracy scorer (field rules + weighted aggregate)
   pipeline.py       CasePipeline orchestration (ports only)
   ports.py          VisionExtractor · MediaProvider · StorageBackend · Renderer
   keys.py           content-addressed storage keys (sanitised)
-  config.py         mode + B2 env resolution + degrade-to-fake wiring
+  config.py         mode + env resolution + degrade-to-fake wiring
   cli.py            judge-runnable offline proof
-  adapters/         fakes.py (offline) · b2_storage.py (real B2, boto3)
-scripts/readiness.py  six-criteria readiness gate (real-evidence checks)
+  adapters/         fakes.py (offline) · b2_storage.py (real B2, boto3) ·
+                    vlm_extractor.py (live VLM ladder) ·
+                    genblaze_provider.py (live still + clip)
+eval/
+  scenarios/        committed synthetic eval set (7 scenarios × 3 views + truths)
+  results/          dated extraction-accuracy scoreboards (JSON + Markdown)
+  evidence/         live-illustration proof, re-hashed by the readiness gate
+scripts/
+  readiness.py               six-criteria readiness gate (real-evidence checks)
+  eval_extraction.py         run the live ladder against the eval set
+  generate_eval_scenarios.py regenerate the eval set (paid, run-once)
 tests/              unit · integration · e2e · golden
 ```
 
-## Roadmap (next phases)
+## Roadmap
 
-1. **Live VLM adapter** behind `VisionExtractor` (GMI chat VLM or Nebius
-   Qwen2.5-VL; structured-output prompt that can only fill SceneGraph v1).
-2. **GenblazeMediaProvider** behind `MediaProvider` (ported from the shared
-   Cinemory foundation; per-asset SHA-256 chained into the manifest).
-3. **Web UI + API** for upload, schematic playback, and manifest
-   verification; live B2 bucket + demo deploy.
-4. Harden the readiness gate threshold (`--min 95`) once the live adapters
-   land.
+Done in Phase 2: the live VLM ladder behind `VisionExtractor` (measured on
+the committed eval set), the `GenblazeMediaProvider` behind `MediaProvider`
+(still + clip, SDK-contract-tested, live evidence committed under
+`eval/evidence/`), and the readiness gate hardened to `--min 95`.
+
+Next (Phase 3):
+
+1. **Web UI + API** for upload, schematic playback, and manifest
+   verification.
+2. **Live deploy** of the demo box plus a claimscene B2 bucket with a
+   write-entitled application key (the two remaining user-gated readiness
+   items).
+3. Optional premium clip path (`Kling-Image2Video-V2.1-Master`) exposed in
+   the UI.
 
 ## License
 

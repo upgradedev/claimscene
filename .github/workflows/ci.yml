@@ -49,10 +49,11 @@ jobs:
       - name: Dependency audit (pip-audit)
         run: pip-audit -r requirements.txt --strict
 
-  # ── 3. Readiness gate skeleton (NON-GATING for the foundation phase) ────────
-  #  Real-evidence checks driving the pipeline/CLI/B2 adapter. Runs with
-  #  --min 0 for now (prints + archives the score); the threshold is hardened
-  #  in a later phase once the live adapters land.
+  # ── 3. Readiness gate (GATING since Phase 2: live adapters + evidence) ──────
+  #  Real-evidence checks driving the pipeline/CLI/B2 adapter, the VLM
+  #  repair loop (canned transport), the real Genblaze Pipeline contract,
+  #  the committed eval scoreboard floor, and the committed live-illustration
+  #  evidence hashes. Fails the build under 95% automatable completeness.
   readiness:
     runs-on: ubuntu-latest
     needs: secret-scan
@@ -66,8 +67,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install -e .
-      - name: Readiness gate (non-gating, --min 0)
-        run: python scripts/readiness.py --min 0
+      - name: Readiness gate (--min 95)
+        run: python scripts/readiness.py --min 95
       - name: Upload readiness report
         if: always()
         uses: actions/upload-artifact@v4

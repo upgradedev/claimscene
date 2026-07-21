@@ -167,10 +167,11 @@ class FakeMediaProvider:
 
     name = "fake-media"
 
-    def generate(self, *, model: str, prompt: str,
+    def generate(self, *, model: str, prompt: str, modality: str = "video",
                  inputs: list[bytes] | None = None,
                  params: dict | None = None) -> bytes:
         digest = hashlib.sha256()
+        digest.update(modality.encode("utf-8"))
         digest.update(model.encode("utf-8"))
         digest.update(prompt.encode("utf-8"))
         for blob in inputs or []:
