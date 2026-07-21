@@ -1,0 +1,5 @@
+# Runtime dependencies for the offline (default) pipeline.
+# The live path (Backblaze B2 via boto3, Genblaze provider) is an optional
+# extra — see pyproject [live]. Keep this list pip-audit --strict clean.
+pydantic>=2.6
+pillow>=10.2

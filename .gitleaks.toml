@@ -1,0 +1,13 @@
+# Gitleaks configuration for ClaimScene.
+# Full default rule set retained; the whole tree AND git history are scanned.
+# The repo contains NO real credentials: it is offline-by-default and live
+# creds come only from the environment at runtime.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Credential-free example env (placeholder values only)"
+paths = [
+    '''\.env\.example''',
+]

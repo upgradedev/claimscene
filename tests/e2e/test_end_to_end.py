@@ -1,0 +1,82 @@
+"""Offline E2E: photos in → every artifact + sealed manifest + verify chain."""
+from __future__ import annotations
+
+import io
+import json
+
+import pytest
+
+from claimscene.adapters.fakes import (
+    FakeMediaProvider,
+    FakeVisionExtractor,
+    InMemoryStorage,
+)
+from claimscene.case import CasePhoto, CaseSpec, PhotoSource
+from claimscene.pipeline import CasePipeline
+from claimscene.provenance import verify_artifact, verify_manifest
+from claimscene.schematic import PillowSchematicRenderer
+
+
+def _real_photo(name: str, color: tuple[int, int, int]) -> CasePhoto:
+    from PIL import Image
+
+    img = Image.new("RGB", (64, 48), color)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return CasePhoto(filename=name, data=buf.getvalue(),
+                     source=PhotoSource.staged_demo)
+
+
+@pytest.fixture(scope="module")
+def run():
+    storage = InMemoryStorage(bucket="e2e")
+    pipeline = CasePipeline(FakeVisionExtractor(), FakeMediaProvider(), storage,
+                            renderer=PillowSchematicRenderer(animate=False))
+    photos = [_real_photo("front.png", (200, 30, 30)),
+              _real_photo("damage_rear.png", (30, 30, 200)),
+              _real_photo("road_wide.png", (30, 200, 30))]
+    result = pipeline.run(CaseSpec(case_id="e2e-case", photos=photos,
+                                   context="two vehicles at a junction"))
+    return storage, result
+
+
+def test_full_chain_verifies(run):
+    storage, result = run
+    manifest = json.loads(storage.get(result.artifacts["manifest"].key))
+    assert verify_manifest(manifest)
+    for name in ("scene_graph", "timeline", "report", "illustration",
+                 "schematic_svg", "schematic_hero"):
+        data = storage.get(result.artifacts[name].key)
+        assert verify_artifact(manifest, name, data), name
+
+
+def test_tamper_detection_end_to_end(run):
+    storage, result = run
+    manifest = json.loads(storage.get(result.artifacts["manifest"].key))
+    tampered = json.loads(json.dumps(manifest))
+    tampered["inputs"][0]["source"] = "user_upload"
+    assert verify_manifest(manifest) is True
+    assert verify_manifest(tampered) is False
+    # Substituted artifact bytes are detected too.
+    assert verify_artifact(manifest, "report", b"forged report") is False
+
+
+def test_index_lists_every_artifact(run):
+    storage, result = run
+    index_keys = {row["key"] for row in storage.index}
+    for ref in result.artifacts.values():
+        assert ref.key in index_keys
+    # 3 inputs + 7 artifacts (no animation with animate=False)
+    assert len(index_keys) == 10
+
+
+def test_scene_and_timeline_json_load_back_validated(run):
+    from claimscene.layout import timeline_from_json
+    from claimscene.scene import scene_from_json
+
+    storage, result = run
+    scene = scene_from_json(storage.get(result.artifacts["scene_graph"].key))
+    timeline = timeline_from_json(storage.get(result.artifacts["timeline"].key))
+    assert scene.schema_id == "claimscene/scene/v1"
+    assert timeline.schema_id == "claimscene/timeline/v1"
+    assert {t.vehicle_id for t in timeline.tracks} == {v.id for v in scene.vehicles}

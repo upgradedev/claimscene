@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claimscene"
+version = "0.1.0"
+description = "Honest accident documentation & illustration — VLM-constrained scene graphs, deterministic top-down schematics, sealed provenance on Backblaze B2 + Genblaze."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "upgradedev" }]
+dependencies = [
+    "pydantic>=2.6",
+    "pillow>=10.2",
+]
+
+[project.optional-dependencies]
+# Real backends (add credentials to use). boto3 backs the Backblaze B2
+# storage adapter; the Genblaze provider adapter lands in the next phase and
+# will pull genblaze[gmicloud] here.
+live = [
+    "boto3>=1.34",
+]
+# Future HTTP API / demo server seam.
+server = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.scripts]
+claimscene = "claimscene.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "ffmpeg: tests that need a real ffmpeg binary on PATH (skipped otherwise)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

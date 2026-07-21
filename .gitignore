@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.mypy_cache/
+.coverage
+
+# Env / secrets — NEVER commit real credentials
+.env
+.env.*
+!.env.example
+
+# Generated pipeline output
+out/
+*.mp4
+
+# Readiness gate output (regenerated each run; archived as a CI artifact)
+readiness.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# PII SAFETY: never commit real accident photos or personal media.
+# The repo uses SYNTHETIC / staged inputs only (see README: synthetic-data policy).
+*.jpg
+*.jpeg
+*.heic
+*.png
+!tests/golden/**
+private/
+real-photos/
