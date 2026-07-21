@@ -1,0 +1,310 @@
+{
+  "schema": "claimscene/extraction-eval/v1",
+  "generated_at": "2026-07-21T22:21:41.347651+00:00",
+  "scenario_count": 7,
+  "scenarios_manifest_generated_at": "2026-07-21T22:01:08.400415+00:00",
+  "prompt_sha256": "30304091d3fee485105b53692c31dcbae45defac44646eaf68371fa13f774d74",
+  "headline": {
+    "model": "google/gemma-4-31b-it",
+    "overall_pct": 100.0
+  },
+  "models": {
+    "google/gemma-4-31b-it": {
+      "overall_pct": 100.0,
+      "earned": 119.0,
+      "possible": 119.0,
+      "per_field": {
+        "approach": {
+          "hits": 14,
+          "total": 14,
+          "pct": 100.0,
+          "weight": 1
+        },
+        "damage_clock": {
+          "hits": 14,
+          "total": 14,
+          "pct": 100.0,
+          "weight": 1
+        },
+        "impact_clock": {
+          "hits": 14,
+          "total": 14,
+          "pct": 100.0,
+          "weight": 1
+        },
+        "maneuver": {
+          "hits": 14,
+          "total": 14,
+          "pct": 100.0,
+          "weight": 1
+        },
+        "road_layout": {
+          "hits": 7,
+          "total": 7,
+          "pct": 100.0,
+          "weight": 2
+        },
+        "signal": {
+          "hits": 7,
+          "total": 7,
+          "pct": 100.0,
+          "weight": 1
+        },
+        "vehicle_color": {
+          "hits": 14,
+          "total": 14,
+          "pct": 100.0,
+          "weight": 1
+        },
+        "vehicle_count": {
+          "hits": 7,
+          "total": 7,
+          "pct": 100.0,
+          "weight": 2
+        },
+        "vehicle_kind": {
+          "hits": 14,
+          "total": 14,
+          "pct": 100.0,
+          "weight": 1
+        }
+      },
+      "scenarios": [
+        {
+          "id": "s01_rear_end",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s02_left_cross",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s03_parking_reverse",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s04_roundabout_sideswipe",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s05_t_intersection",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s06_lane_change",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s07_intersection_truck",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        }
+      ],
+      "latency_s": [
+        33.3,
+        55.7,
+        24.6,
+        18.0,
+        30.1,
+        20.0,
+        20.1
+      ],
+      "failures": [],
+      "usage": {
+        "calls": 7,
+        "prompt_tokens": 11703,
+        "completion_tokens": 1427
+      }
+    },
+    "google/gemini-3.5-flash": {
+      "overall_pct": 71.4,
+      "earned": 85.0,
+      "possible": 119.0,
+      "per_field": {
+        "approach": {
+          "hits": 10,
+          "total": 14,
+          "pct": 71.4,
+          "weight": 1
+        },
+        "damage_clock": {
+          "hits": 10,
+          "total": 14,
+          "pct": 71.4,
+          "weight": 1
+        },
+        "impact_clock": {
+          "hits": 10,
+          "total": 14,
+          "pct": 71.4,
+          "weight": 1
+        },
+        "maneuver": {
+          "hits": 10,
+          "total": 14,
+          "pct": 71.4,
+          "weight": 1
+        },
+        "road_layout": {
+          "hits": 5,
+          "total": 7,
+          "pct": 71.4,
+          "weight": 2
+        },
+        "signal": {
+          "hits": 5,
+          "total": 7,
+          "pct": 71.4,
+          "weight": 1
+        },
+        "vehicle_color": {
+          "hits": 10,
+          "total": 14,
+          "pct": 71.4,
+          "weight": 1
+        },
+        "vehicle_count": {
+          "hits": 5,
+          "total": 7,
+          "pct": 71.4,
+          "weight": 2
+        },
+        "vehicle_kind": {
+          "hits": 10,
+          "total": 14,
+          "pct": 71.4,
+          "weight": 1
+        }
+      },
+      "scenarios": [
+        {
+          "id": "s01_rear_end",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s02_left_cross",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s03_parking_reverse",
+          "pct": 0.0,
+          "earned": 0.0,
+          "possible": 17.0,
+          "notes": [
+            "extraction failed \u2014 all fields scored as misses",
+            "miss: road_layout",
+            "miss: signal",
+            "miss: vehicle_count",
+            "miss: vehicle_kind",
+            "miss: vehicle_color",
+            "miss: damage_clock",
+            "miss: approach",
+            "miss: maneuver",
+            "miss: impact_clock",
+            "miss: vehicle_kind",
+            "miss: vehicle_color",
+            "miss: damage_clock",
+            "miss: approach",
+            "miss: maneuver",
+            "miss: impact_clock"
+          ]
+        },
+        {
+          "id": "s04_roundabout_sideswipe",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s05_t_intersection",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        },
+        {
+          "id": "s06_lane_change",
+          "pct": 0.0,
+          "earned": 0.0,
+          "possible": 17.0,
+          "notes": [
+            "extraction failed \u2014 all fields scored as misses",
+            "miss: road_layout",
+            "miss: signal",
+            "miss: vehicle_count",
+            "miss: vehicle_kind",
+            "miss: vehicle_color",
+            "miss: damage_clock",
+            "miss: approach",
+            "miss: maneuver",
+            "miss: impact_clock",
+            "miss: vehicle_kind",
+            "miss: vehicle_color",
+            "miss: damage_clock",
+            "miss: approach",
+            "miss: maneuver",
+            "miss: impact_clock"
+          ]
+        },
+        {
+          "id": "s07_intersection_truck",
+          "pct": 100.0,
+          "earned": 17.0,
+          "possible": 17.0,
+          "notes": []
+        }
+      ],
+      "latency_s": [
+        11.9,
+        13.9,
+        29.4,
+        24.9,
+        27.1,
+        31.7,
+        13.1
+      ],
+      "failures": [
+        {
+          "id": "s03_parking_reverse",
+          "error": "every VLM ladder rung failed: gmi:google/gemini-3.5-flash: transport: Error code: 429 - {'error': 'Rate limit exceeded'}"
+        },
+        {
+          "id": "s06_lane_change",
+          "error": "every VLM ladder rung failed: gmi:google/gemini-3.5-flash: transport: Error code: 429 - {'error': {'message': 'Service temporarily unavailable. All endpoints are currently overloaded. Please try again later.', 'type': 'service_unavailable', 'code': 'rate_limit_exceeded'}}"
+        }
+      ],
+      "usage": {
+        "calls": 5,
+        "prompt_tokens": 20722,
+        "completion_tokens": 9729
+      }
+    }
+  }
+}

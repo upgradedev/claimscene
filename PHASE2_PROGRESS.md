@@ -32,26 +32,37 @@ hardening + README. Budget cap ~$6.
   fixed by explicit `backend=None` sentinel; b2.live_objects_written
   user-gated note updated. Cost of incident: ~$0.04.
 
-## In flight
-- `scripts/generate_eval_scenarios.py` background run generating 7 scenarios
-  x 3 seedream views (~85 s/image, ~$0.74). s01 done (3 jpgs <300KB, scene
-  matches truth). Resume-safe: rerun the script, done scenarios skip.
+## Milestones landed (2026-07-22)
+- Eval set COMMITTED: 21 seedream images (7 scenarios x 3 views, all
+  <300KB, visually verified against truths via thumbnails) + manifest.
+- Canonical scoreboard COMMITTED (eval/results/2026-07-21_extraction_eval):
+  **gemma-4-31b-it 100.0%** (7/7 scenarios, all fields); gemini-3.5-flash
+  71.4% (every ANSWERED scenario 100%; two scenarios zeroed by GMI 429
+  capacity — recorded in JSON; capacity figure, not accuracy).
+  One live repair round-trip observed (s06 run 1) — the loop works.
+- Live evidence COMMITTED (eval/evidence/live_illustration): full live
+  pipeline run (mode=live, B2 unset): gemma-4 extraction + seedream still +
+  pixverse clip, provider=genblaze, degraded=False, VERIFY PASS; readiness
+  re-hashes the committed bytes.
+- Readiness: automatable 100.0%, GATE PASS at --min 95 (run locally).
+- A/B (bonus lever): seedream sequential_image_generation=auto returned 3
+  coherent views in ONE request (133s, same $/image) — viable faster path
+  for future set builds; verdict in scratchpad ab_sequential_result.json,
+  images not committed.
+- README updated: measured headline, ladder table, methodology + limits,
+  flash capacity note, roadmap Phase 3.
 
-## Next (in order)
-1. Wait for generation → commit eval/scenarios (jpgs + manifest.json).
-2. `scripts/eval_extraction.py --live` (gemma-4 + gemini-3.5-flash) →
-   commit dated scoreboard to eval/results; iterate prompt (≤3) if <60%.
-3. Live evidence: CLAIMSCENE_MODE=live CLI run on s01 photos with B2 env
-   UNSET (sink entitlement!), copy illustration.png/mp4 + scene.json +
-   manifest.json → eval/evidence/live_illustration/ (readiness verifies).
-4. Optional $0.11 A/B: seedream sequential_image_generation=auto — record
-   verdict JSON only, do not commit extra images.
-5. README: measured % headline + models table + eval methodology + budget.
-6. Validate: ruff + pytest + readiness --min 95 in fresh venv → PR → CI
+## Remaining
+1. Final validation (ruff + full pytest + readiness) → commit → PR → CI
    green → squash-merge.
 
-## Spend ledger (USD, cumulative)
-- probes (pre-task, separate session): 0.13
-- failed s01 master (sink incident): 0.035 (+1 spare probe1 retry 0.005)
-- eval set so far: s01 3 images = 0.105; rest pending (~0.63)
-- VLM live smoke test (pytest): ~0.005
+## Spend ledger (USD, cumulative — this task)
+- sink-incident lost master: 0.035
+- DNS-crash lost s02 master: 0.035
+- eval set (21 images, recorded): 0.735
+- A/B sequential probe (3 images): 0.105
+- live evidence case (still+clip): 0.060
+- VLM tokens (live smoke + 2 full eval runs + evidence): ~0.05 est
+  (gemma 7 calls = 11.7K prompt + 1.4K completion tokens/run; flash 20.7K +
+  9.7K reasoning-heavy)
+- TOTAL: ~$1.07 of the $6 cap

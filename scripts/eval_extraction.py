@@ -51,7 +51,10 @@ def run_model(rung, scenarios: list[dict], manifest: dict) -> dict:
     from claimscene.evaluation import aggregate, score_scene
     from claimscene.scene import SceneGraph
 
-    extractor = VlmExtractor([rung])
+    # Batch patience: GMI reasoning models intermittently 429 under load, so
+    # give each rung more in-rung retries with a longer backoff than the
+    # interactive default before scoring a scenario as failed.
+    extractor = VlmExtractor([rung], attempts_per_rung=3, backoff_s=8.0)
     scores, latencies, failures = [], [], []
     for row in scenarios:
         photos = [
