@@ -33,8 +33,10 @@ def test_user_gated_items_are_surfaced_not_hidden():
     report = readiness.evaluate()
     gated_ids = {g["id"] for g in report["user_gated"]}
     # Phase 2 converted the genblaze checks to automatable real evidence;
-    # only genuinely human-held items may remain user-gated.
-    assert gated_ids == {"production.live_deploy", "b2.live_objects_written"}
+    # only genuinely human-held items (live deploy, entitled bucket) remain
+    # user-gated. Phase 3 adds the live web-app reachability gate.
+    assert gated_ids == {"production.live_deploy", "b2.live_objects_written",
+                         "web.live_deploy_reachable"}
     for g in report["user_gated"]:
         assert g["action"].startswith("TODO"), g["id"]
 
@@ -58,4 +60,4 @@ def test_report_schema_and_criteria_cover_the_thesis():
     assert report["schema"] == "claimscene/readiness/v1"
     ids = {c["id"] for c in report["criteria"]}
     assert ids == {"utility", "production", "b2", "genblaze", "security",
-                   "honest_media"}
+                   "honest_media", "web"}

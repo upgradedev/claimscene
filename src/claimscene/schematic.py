@@ -56,6 +56,18 @@ SEVERITY_FILL = {"scratch": "#ffd166", "dent": "#f4845f", "crush": "#ef476f"}
 _ROAD_EXTENT = 60.0  # how far the road bands extend from the origin (m)
 
 
+def _xml_escape(text: str) -> str:
+    """Escape XML *text content* — only ``&``, ``<``, ``>`` (apostrophes and
+    quotes are legal in element text and are left untouched, which keeps the
+    committed golden byte-identical). This closes the one injection vector in
+    the otherwise closed-vocabulary schematic: the two free-string fields the
+    caller controls — the case-id title and vehicle ids — reach ``<text>``
+    nodes, and the ``/cases/preview-schematic`` endpoint returns this SVG for a
+    client-supplied SceneGraph.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 @dataclass
 class SchematicArtifacts:
     static_svg: str
@@ -240,7 +252,7 @@ def _svg_vehicle(timeline: Timeline, vid: str, index: int, view: _View,
     if with_label:
         lx, ly = view.px(pose.x, pose.y)
         parts.append(f'<text x="{lx:.1f}" y="{ly - 14:.1f}" fill="{TEXT}" font-size="12" '
-                     f'text-anchor="middle">{vid}</text>')
+                     f'text-anchor="middle">{_xml_escape(vid)}</text>')
         for dz in meta.damage:
             dx, dy = clock_point_world(pose, dz.clock_position, meta.length_m, meta.width_m)
             px, py = view.px(dx, dy)
@@ -300,20 +312,21 @@ def build_static_svg(timeline: Timeline, *, title: str | None = None,
     # Header, legend, events, watermark.
     heading = title or "TOP-DOWN SCHEMATIC"
     out.append(f'<text x="{width / 2:.1f}" y="28" fill="{TEXT}" font-size="16" '
-               f'text-anchor="middle">CLAIMSCENE · {heading} · FACTUAL LAYER</text>')
+               f'text-anchor="middle">CLAIMSCENE · {_xml_escape(heading)} · '
+               f'FACTUAL LAYER</text>')
     road = timeline.road
     legend = [f'{road.layout.value} · {road.lanes_per_direction} lane(s)/dir · '
               f'signal: {road.signal.value}']
     for v in timeline.vehicles:
         struck = (f' · struck at {v.impact_clock} o\'clock'
                   if v.impact_clock is not None else "")
-        legend.append(f'{v.id} · {v.color.value} {v.kind.value}{struck}')
+        legend.append(f'{_xml_escape(v.id)} · {v.color.value} {v.kind.value}{struck}')
     for i, line in enumerate(legend):
         out.append(f'<text x="16" y="{52 + i * 16}" fill="{TEXT_DIM}" '
                    f'font-size="12">{line}</text>')
     for i, ev in enumerate(timeline.events):
         out.append(f'<text x="16" y="{height - 70 + i * 14:.1f}" fill="{TEXT_DIM}" '
-                   f'font-size="11">t={ev.t:.2f}s {ev.label}</text>')
+                   f'font-size="11">t={ev.t:.2f}s {_xml_escape(ev.label)}</text>')
     out.append(f'<text x="{width / 2:.1f}" y="{height / 2 + 6:.1f}" '
                f'fill="{WATERMARK_COLOR}" font-size="34" text-anchor="middle" '
                f'opacity="0.5">{WATERMARK}</text>')

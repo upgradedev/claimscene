@@ -22,6 +22,13 @@ eval scoreboard, committed live-illustration evidence), so CI now runs this
 GATING at ``--min 95``. Remaining user-gated items (live deploy, entitled B2
 bucket) are listed for the user and excluded from the automatable score.
 
+Phase 3: the web app landed (FastAPI review-adjust API + blueprint React
+client). The **Web Application** criterion drives the real API in-process via
+FastAPI's TestClient — the extract→preview→render→get→playback chain, the
+review-adjust live-update, and the in-browser-verify golden fixture — as real
+evidence. The frontend's own typecheck + Vitest + production build are gated
+separately by the ``frontend`` CI job (real node evidence, not re-run here).
+
 Run:
     python scripts/readiness.py                 # human report + readiness.json
     python scripts/readiness.py --json out.json --min 95
@@ -617,6 +624,112 @@ def check_honest_source_attribution_sealed() -> tuple[bool, str]:
     return True, "per-input source/attribution sealed; re-badging breaks the seal"
 
 
+# ── web application (real TestClient evidence over the API) ───────────────────
+@lru_cache(maxsize=1)
+def _api_client():
+    from fastapi.testclient import TestClient
+
+    import claimscene.api as capi
+
+    return TestClient(capi.app)
+
+
+def check_web_health_and_scenarios() -> tuple[bool, str]:
+    """Health reports the effective backends; the zero-photo scenario set is
+    served; scenario thumbnails serve; the image route blocks traversal."""
+    client = _api_client()
+    health = client.get("/health").json()
+    if health.get("service") != "claimscene-api" or "provider" not in health:
+        return False, "health surface is not the honest claimscene-api shape"
+    scenarios = client.get("/scenarios").json().get("scenarios", [])
+    if len(scenarios) < 6:
+        return False, f"only {len(scenarios)} scenarios served (need >=6)"
+    if client.get(scenarios[0]["thumbnail"]).status_code != 200:
+        return False, "scenario thumbnail did not serve"
+    traversal = client.get("/scenarios/s01_rear_end/images/..%2f..%2fmanifest.json")
+    if traversal.status_code != 404:
+        return False, "scenario image route did not block a traversal attempt"
+    return True, (f"health honest; {len(scenarios)} zero-photo scenarios served; "
+                  "thumbnails serve; image traversal blocked (404)")
+
+
+def check_web_review_adjust_preview() -> tuple[bool, str]:
+    """The review-adjust centrepiece: extract proposes a scene, an edit
+    live-updates the static schematic, and the vocabulary gate still bites at
+    the API boundary."""
+    client = _api_client()
+    scene = client.post("/cases/extract",
+                        data={"scenario_id": "s01_rear_end"}).json()["scene"]
+    first = client.post("/cases/preview-schematic", json=scene)
+    if first.status_code != 200 or not first.json()["svg"].startswith("<svg"):
+        return False, "preview did not return a static schematic"
+    edited = json.loads(json.dumps(scene))
+    edited["road"]["signal"] = "stop_sign"
+    edited["vehicles"][0]["color"] = "red"
+    second = client.post("/cases/preview-schematic", json=edited).json()["svg"]
+    if second == first.json()["svg"]:
+        return False, "an edit did not propagate into the schematic"
+    edited["vehicles"] = [{"id": "v", "kind": "hovercraft", "color": "red"}]
+    if client.post("/cases/preview-schematic", json=edited).status_code != 422:
+        return False, "hallucinated vocabulary was accepted by the preview API"
+    return True, ("extract→preview live-updates the factual schematic on edit; "
+                  "hallucinated vocabulary rejected (422)")
+
+
+def check_web_render_seal_and_playback() -> tuple[bool, str]:
+    """Render seals a verifiable case over the API, resets client notes, and
+    the schematic + illustration playback routes stream offline."""
+    from claimscene.provenance import verify_manifest
+
+    client = _api_client()
+    scene = client.post("/cases/extract",
+                        data={"scenario_id": "s02_left_cross"}).json()["scene"]
+    scene["confidence_notes"] = ["INJECTED CLIENT NOTE"]
+    body = client.post("/cases/render",
+                       data={"scene": json.dumps(scene),
+                             "scenario_id": "s02_left_cross"}).json()
+    raw = client.get(body["manifest_url"]).content
+    if not verify_manifest(json.loads(raw)):
+        return False, "sealed case manifest failed verification over the API"
+    if any("INJECTED" in w for w in body["warnings"]):
+        return False, "client-supplied notes leaked into the sealed scene"
+    if not any("human-in-the-loop" in w for w in body["warnings"]):
+        return False, "server-authored human-in-the-loop note missing"
+    schematic = client.get(body["schematic_url"])
+    illustration = client.get(body["illustration_url"])
+    if schematic.status_code != 200 or illustration.status_code != 200:
+        return False, "a playback route did not stream (non-200)"
+    if schematic.headers["content-type"] not in ("video/mp4", "image/png"):
+        return False, f"unexpected schematic media {schematic.headers['content-type']}"
+    return True, ("render seals a verifiable case; client notes reset; "
+                  "schematic + illustration playback stream (200)")
+
+
+def check_web_inbrowser_verify_fixture() -> tuple[bool, str]:
+    """The committed golden manifest that the frontend's in-browser Verify test
+    pins is a REAL sealed backend manifest: it re-hashes to its own seal, the
+    .expected.json hash is current, the bytes are the canonical served form,
+    and it exercises ensure_ascii escaping (so the browser canonicalizer is
+    tested against non-ASCII)."""
+    from claimscene.provenance import canonical_json, sha256_bytes
+
+    fixtures = _REPO_ROOT / "frontend" / "src" / "test" / "fixtures"
+    raw = (fixtures / "golden-manifest.json").read_bytes()
+    expected = json.loads((fixtures / "golden-manifest.expected.json").read_text("utf-8"))
+    manifest = json.loads(raw)
+    body = {k: v for k, v in manifest.items() if k != "manifest_hash"}
+    if sha256_bytes(canonical_json(body)) != manifest["manifest_hash"]:
+        return False, "golden manifest does not re-hash to its own seal"
+    if manifest["manifest_hash"] != expected["manifest_hash"]:
+        return False, "golden .expected.json hash is stale"
+    if raw != canonical_json(manifest):
+        return False, "golden fixture is not the canonical served bytes"
+    if b"\\u2014" not in raw:
+        return False, "golden fixture does not exercise ensure_ascii escaping"
+    return True, ("committed golden manifest re-hashes to its seal; canonical "
+                  "bytes; exercises ensure_ascii — the in-browser verify is pinned")
+
+
 # ── criteria wiring ──────────────────────────────────────────────────────────
 def build_criteria() -> list[Criterion]:
     return [
@@ -691,6 +804,26 @@ def build_criteria() -> list[Criterion]:
             Check("honest_media.source_attribution_sealed",
                   "Per-input source/attribution sealed; re-badging detected",
                   2, run=check_honest_source_attribution_sealed),
+        ]),
+        Criterion("web", "Web Application (review-adjust UI + API)", [
+            Check("web.health_and_scenarios",
+                  "API health honest + zero-photo scenarios served + image traversal blocked",
+                  2, run=check_web_health_and_scenarios),
+            Check("web.review_adjust_preview",
+                  "Extract→preview live-updates the schematic; vocabulary gate holds",
+                  3, run=check_web_review_adjust_preview),
+            Check("web.render_seal_and_playback",
+                  "Render seals a verifiable case; playback routes stream offline",
+                  3, run=check_web_render_seal_and_playback),
+            Check("web.inbrowser_verify_fixture",
+                  "Committed golden manifest re-hashes to its seal (verify pinned)",
+                  2, run=check_web_inbrowser_verify_fixture),
+            Check("web.live_deploy_reachable",
+                  "Deployed web app reachable (health=200) with the built client",
+                  2, user_gated=True,
+                  gate_detail="TODO (user/main loop): deploy the container to "
+                  "Cloud Run (bash deploy/deploy-cloudrun.sh) and confirm "
+                  "GET /health is 200 and GET / serves the built React client."),
         ]),
     ]
 

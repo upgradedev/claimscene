@@ -1,0 +1,19 @@
+# Cloud Build — build the ClaimScene container and push it to Artifact Registry.
+# Cloud-first: the image is built by Cloud Build (no local Docker required).
+#
+# Invoked by deploy/deploy-cloudrun.sh, or directly:
+#   gcloud builds submit --config deploy/cloudbuild.yaml \
+#     --substitutions=_IMAGE=europe-west1-docker.pkg.dev/PROJECT/REPO/claimscene:TAG
+substitutions:
+  _IMAGE: "europe-west1-docker.pkg.dev/upgradegr-claimscene/claimscene/claimscene:latest"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}", "-f", "Dockerfile", "."]
+
+images:
+  - "${_IMAGE}"
+
+options:
+  # Required when the build has no default logs bucket (default Cloud Build SA).
+  logging: CLOUD_LOGGING_ONLY

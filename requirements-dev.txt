@@ -6,3 +6,8 @@ pip-audit>=2.7
 # contract tests in tests/integration/test_genblaze_contract.py actually RUN
 # in CI — guarding the adapter against Genblaze API drift.
 genblaze-core>=0.3.4,<0.4
+# httpx backs FastAPI's TestClient (the API + e2e tests exercise every route
+# in-process, no network). boto3 lets the B2 presign contract test construct a
+# real S3 client and assert SigV4 + region (no creds/network at construction).
+httpx>=0.27
+boto3>=1.34
