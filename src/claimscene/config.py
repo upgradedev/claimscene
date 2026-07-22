@@ -46,6 +46,7 @@ class B2Config:
     key_id: str | None
     app_key: str | None
     key_prefix: str | None
+    region: str | None
 
 
 def _first_env(*names: str) -> str | None:
@@ -74,6 +75,9 @@ def resolve_b2_config() -> B2Config:
         key_id=_first_env("B2_APPLICATION_KEY_ID", "B2_KEY_ID"),
         app_key=_first_env("B2_APPLICATION_KEY", "B2_APP_KEY"),
         key_prefix=_first_env("B2_KEY_PREFIX", "B2_PREFIX"),
+        # Explicit override wins; otherwise the storage adapter derives it from
+        # the endpoint host (B2 encodes the region there, e.g. eu-central-003).
+        region=_first_env("B2_REGION"),
     )
 
 

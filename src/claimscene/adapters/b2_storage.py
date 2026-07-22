@@ -28,6 +28,52 @@ import json
 # Object holding the run index (JSONL catalogue), relative to the key prefix.
 _INDEX_NAME = "index.jsonl"
 
+# Fallback region for SigV4 signing when none is configured or derivable. B2
+# always encodes the real region in the endpoint host, so this only ever
+# applies to a hand-rolled non-B2 endpoint; SigV4 still needs *some* region.
+_DEFAULT_REGION = "us-east-1"
+
+
+def region_from_endpoint(endpoint_url: str | None) -> str | None:
+    """Derive the S3 region from a B2/S3 endpoint host.
+
+    B2 endpoints look like ``s3.eu-central-003.backblazeb2.com`` — the region
+    is the second dotted label. Returns ``None`` when it cannot be inferred.
+    """
+    if not endpoint_url:
+        return None
+    host = endpoint_url.split("://", 1)[-1].split("/", 1)[0]
+    parts = host.split(".")
+    if len(parts) >= 3 and parts[0] in ("s3", "s3-api"):
+        return parts[1] or None
+    return None
+
+
+def build_b2_client(
+    *, endpoint_url: str, region: str, key_id: str, app_key: str
+) -> object:
+    """Construct a boto3 S3 client wired for Backblaze B2 presigned URLs.
+
+    The critical detail (ported from Cinemory PR #17/#19): B2 rejects a
+    presigned GET unless the client signs with **SigV4** and the **correct
+    region**. boto3's defaults sign some requests with a region/algorithm B2
+    refuses, so a naive client 401s the moment ``/cases/{id}/schematic`` or
+    ``/cases/{id}/illustration`` redirects a browser to a presigned URL. We
+    pin ``signature_version="s3v4"`` and an explicit ``region_name`` so the
+    302-presign playback path actually works live.
+    """
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        region_name=region,
+        aws_access_key_id=key_id,
+        aws_secret_access_key=app_key,
+        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+    )
+
 
 class B2Storage:
     def __init__(
@@ -62,6 +108,12 @@ class B2Storage:
                 "B2 endpoint not configured (set B2_S3_ENDPOINT or B2_ENDPOINT_URL)"
             )
 
+        # Region for SigV4 signing: explicit B2_REGION wins, else derive it
+        # from the endpoint host, else the safe SigV4 default.
+        self.region = (
+            cfg.region or region_from_endpoint(self.endpoint_url) or _DEFAULT_REGION
+        )
+
         # ``client`` is a test seam (inject an S3-compatible stub); the real
         # path builds a boto3 client — the only branch needing boto3 + creds.
         if client is not None:
@@ -73,17 +125,16 @@ class B2Storage:
                     "B2_APPLICATION_KEY or B2_KEY_ID/B2_APP_KEY)"
                 )
             try:
-                import boto3
+                self._client = build_b2_client(
+                    endpoint_url=self.endpoint_url,
+                    region=self.region,
+                    key_id=access_key_id,
+                    app_key=secret_access_key,
+                )
             except ImportError as exc:
                 raise RuntimeError(
                     "boto3 is required for B2Storage: pip install claimscene[live]"
                 ) from exc
-            self._client = boto3.client(
-                "s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=access_key_id,
-                aws_secret_access_key=secret_access_key,
-            )
 
         # Seed the in-memory index from whatever is already durable in the
         # bucket, so a fresh instance inherits the full catalogue.

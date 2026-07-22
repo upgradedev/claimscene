@@ -7,6 +7,12 @@ illustration — not evidence"*, and an incident report. Every artifact is
 content-addressed on Backblaze B2 with SHA-256-sealed provenance that also
 records where every input photo came from.
 
+A **forensic-blueprint web app** wraps the pipeline: the AI *proposes* a
+constrained scene, you *review and adjust* it against a live-redrawing
+schematic, and only then is the case sealed. AI proposes, you confirm — the
+human-in-the-loop step is the centrepiece, and the whole flow runs on committed
+sample scenarios so anyone can try it with zero photos.
+
 Built for the **Backblaze Generative Media Hackathon** (provenance-aware media
 category).
 
@@ -61,7 +67,11 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    CLI["CLI — python -m claimscene.cli<br/>(HTTP API: next phase)"] --> PIPE["CasePipeline<br/>depends on ports only"]
+    WEB["React web client (Vite + TS)<br/>forensic-blueprint review-adjust UI<br/>+ in-browser SHA-256 verify"] -->|"same origin<br/>/health · /scenarios · /cases"| API
+    CLI["CLI — python -m claimscene.cli"] --> PIPE
+    API["FastAPI API (claimscene.api)<br/>extract · preview-schematic ·<br/>render · get · playback"] --> PIPE["CasePipeline<br/>depends on ports only"]
+    API -.->|"reviewed scene"| FSE["FixedSceneExtractor<br/>(seals the human-confirmed scene)"]
+    FSE -.-> PIPE
     PIPE --- VE{{"VisionExtractor port"}}
     PIPE --- MP{{"MediaProvider port"}}
     PIPE --- SB{{"StorageBackend port"}}
@@ -82,6 +92,79 @@ provenance — runs offline in CI with zero credentials. In `live` mode a
 missing credential degrades that backend to its fake with a WARNING and the
 manifest honestly records `degraded: true`. It never crashes.
 
+## The web app (review-adjust)
+
+A React + Vite + TypeScript client in a deliberate **forensic-blueprint**
+identity — dark steel drafting board, amber survey line-work, cyan technical
+annotations, monospace throughout — served same-origin by the FastAPI backend
+(one container, one port). A persistent top banner never lets the disclosure
+out of sight: *"Illustrations are AI-generated — NOT EVIDENCE."*
+
+The user journey is four steps, and the middle one is the whole point:
+
+1. **Source.** Upload accident photos (per-photo role tagging), **or** pick one
+   of the committed sample scenarios — so a reviewer can run the entire flow
+   with zero photos of their own.
+2. **Review & adjust — the centrepiece.** The extractor only *proposes* a
+   scene. You edit it in a panel where every control is bound to the closed
+   vocabulary — dropdowns for kind/colour/road/maneuver, a **12-position clock
+   picker** for damage and impact points (never free-text coordinates). A
+   static top-down schematic **redraws live** as you edit (`POST
+   /cases/preview-schematic`). *AI proposes, you confirm* — nothing is sealed
+   until you render.
+3. **Render.** The full pipeline runs: animated schematic (factual layer) +
+   disclosed illustration + report + a canonical-SHA-256 manifest, all stored.
+4. **Sealed case.** The animated schematic plays beside the illustration clip
+   (with a persistent *"AI ILLUSTRATION — NOT EVIDENCE"* overlay), next to the
+   incident report, downloads, and a **provenance panel**: every input photo's
+   source/attribution/licence, and a **Verify** button that recomputes the
+   sealed SHA-256 in your browser (WebCrypto) from the re-fetched manifest.
+
+Because the reviewed scene is client input, the API resets its
+`confidence_notes` server-side before sealing (only server-derived text is
+sealed), the constrained vocabulary is re-enforced by Pydantic (a hallucinated
+field → `422`), and the schematic's dynamic text is XML-escaped at the source.
+
+### HTTP API
+
+| Route | Purpose |
+|---|---|
+| `GET /health` | liveness + effective backends (honest `mode`/`provider`/`storage`) |
+| `GET /scenarios` | committed sample scenarios (zero-photo demo) |
+| `POST /cases/extract` | photos or a scenario → a constrained SceneGraph |
+| `POST /cases/preview-schematic` | a SceneGraph → a fast static schematic (live review) |
+| `POST /cases/render` | a reviewed SceneGraph → a sealed case |
+| `GET /cases/{id}` | the sealed manifest (raw canonical bytes, for in-browser verify) |
+| `GET /cases/{id}/schematic` | factual-layer playback (MP4 live / PNG offline) |
+| `GET /cases/{id}/illustration` | illustration playback (302 → fresh presigned URL live / stream offline) |
+
+Every route works offline with zero credentials. A live media-provider failure
+degrades **that request** to the offline provider against the same storage —
+the response says so (`provider_degraded`) and the sealed manifest records the
+provider that actually ran; it never 500s because a remote backend misbehaved.
+
+### Run the web app locally
+
+```bash
+# 1. API (offline, no creds) — http://localhost:8000
+pip install -e ".[server]"
+uvicorn claimscene.api:app --reload
+
+# 2. Web client (dev, proxies /health /scenarios /cases to :8000)
+cd frontend && npm install && npm run dev        # http://localhost:5173
+```
+
+Or the whole thing as the single production container the deploy uses:
+
+```bash
+docker build -t claimscene .
+docker run --rm -p 8000:8000 claimscene          # http://localhost:8000
+```
+
+The container boots in **offline** mode (health → `mode=offline`) with zero
+credentials. See [`deploy/CLOUDRUN.md`](deploy/CLOUDRUN.md) for the turnkey
+Cloud Run deploy (`bash deploy/deploy-cloudrun.sh`) and the live cutover.
+
 ## Quickstart (offline, no credentials, ~2 minutes)
 
 ```bash
@@ -90,9 +173,9 @@ cd claimscene
 python -m venv .venv
 # Windows: .venv\Scripts\activate    Linux/macOS: source .venv/bin/activate
 pip install -r requirements-dev.txt
-pip install -e .
+pip install -e ".[server]"      # [server] adds the API (fastapi + multipart)
 
-pytest                          # 108 offline tests
+pytest                          # 181 offline backend tests
 python -m claimscene.cli --case demo --out out
 ```
 
@@ -198,20 +281,27 @@ manifest instead of pretending they do not exist.
 
 ## Testing & CI
 
-- 150+ offline tests (unit / integration / e2e): schema round-trips and
-  rejection of hallucinated fields, layout determinism and contact-geometry
-  properties, golden-file SVG, provenance seal/tamper, real B2 adapter
-  against an S3 stub, VLM ladder + repair loop against canned transports,
-  the extraction-accuracy scorer, Genblaze SDK-boundary contract tests
-  (the SDK's own mock provider through a real `Pipeline`, including the
-  input-attachment assertions that a silent regression would otherwise
-  hide), pipeline e2e, CLI smoke, readiness gate.
-- CI (GitHub Actions): gitleaks v8.18.4 secret scan first, then ruff,
-  pytest, pip-audit, and the readiness gate, now GATING at `--min 95`
-  (real-evidence checks include re-hashing the committed live-illustration
-  evidence and enforcing the eval-scoreboard floor).
-- ffmpeg tests skip cleanly when ffmpeg is absent; `@pytest.mark.live`
-  smokes run only when `GMI_API_KEY` is present (never in CI).
+- **181 offline backend tests** (unit / integration / e2e): schema
+  round-trips and rejection of hallucinated fields, layout determinism and
+  contact-geometry properties, golden-file SVG, provenance seal/tamper, real
+  B2 adapter against an S3 stub (**+ a presign contract test asserting SigV4 +
+  region**, so the live playback redirect can't 401), VLM ladder + repair loop
+  against canned transports, the extraction-accuracy scorer, Genblaze
+  SDK-boundary contract tests, and the **full API chain** through FastAPI's
+  TestClient (extract → preview → render → get → verify → playback, honest
+  degrade, path sanitisation, 422s).
+- **39 frontend tests** (Vitest): the review-panel edit logic, the
+  schematic-preview live-update wiring, the ReviewStep centrepiece render, the
+  playback-url selection, and the in-browser verify pinned to a **golden
+  manifest produced by the real backend** (whose sealed em-dash exercises
+  `ensure_ascii`).
+- CI (GitHub Actions): gitleaks v8.18.4 secret scan first, then in parallel —
+  a Python job (ruff, pytest, pip-audit, **readiness gate GATING at `--min
+  95`** with a new *Web Application* criterion driving the API via TestClient),
+  and a **frontend job** (typecheck → Vitest → production build).
+- ffmpeg tests skip cleanly when ffmpeg is absent (the schematic playback route
+  then serves the real hero PNG instead of MP4); `@pytest.mark.live` smokes run
+  only when `GMI_API_KEY` is present (never in CI).
 
 ## Shared foundation disclosure
 
@@ -237,19 +327,28 @@ src/claimscene/
   ports.py          VisionExtractor · MediaProvider · StorageBackend · Renderer
   keys.py           content-addressed storage keys (sanitised)
   config.py         mode + env resolution + degrade-to-fake wiring
+  api.py            FastAPI web API (extract · preview · render · get · playback)
+  scenarios.py      committed sample scenarios + safe image resolution
   cli.py            judge-runnable offline proof
-  adapters/         fakes.py (offline) · b2_storage.py (real B2, boto3) ·
+  adapters/         fakes.py (offline) · b2_storage.py (real B2, boto3, SigV4) ·
                     vlm_extractor.py (live VLM ladder) ·
                     genblaze_provider.py (live still + clip)
+frontend/           React + Vite + TS web client (forensic-blueprint UI)
+  src/lib/          api.ts · scene.ts (constrained vocabulary) ·
+                    provenance-verify.ts (in-browser WebCrypto verify)
+  src/components/    review-adjust panel · ClockPicker · SchematicPreview ·
+                    ProvenancePanel · steps/ · UI primitives
+  src/test/fixtures/ golden-manifest.json (from the real backend)
+deploy/             Dockerfile (root) · cloudbuild.yaml · deploy-cloudrun.sh · CLOUDRUN.md
 eval/
   scenarios/        committed synthetic eval set (7 scenarios × 3 views + truths)
   results/          dated extraction-accuracy scoreboards (JSON + Markdown)
   evidence/         live-illustration proof, re-hashed by the readiness gate
 scripts/
-  readiness.py               six-criteria readiness gate (real-evidence checks)
+  readiness.py               seven-criteria readiness gate (real-evidence checks)
   eval_extraction.py         run the live ladder against the eval set
   generate_eval_scenarios.py regenerate the eval set (paid, run-once)
-tests/              unit · integration · e2e · golden
+tests/              unit · integration · e2e (incl. test_api.py) · golden
 ```
 
 ## Roadmap
@@ -259,13 +358,18 @@ the committed eval set), the `GenblazeMediaProvider` behind `MediaProvider`
 (still + clip, SDK-contract-tested, live evidence committed under
 `eval/evidence/`), and the readiness gate hardened to `--min 95`.
 
-Next (Phase 3):
+Done in Phase 3: the **FastAPI API** (extract · preview-schematic · render ·
+get · playback), the **forensic-blueprint React web app** with the
+review-adjust centrepiece and in-browser provenance verification, the
+single-container **Dockerfile** + Cloud Run deploy assets, the **B2 presign
+fix** (SigV4 + region), and a **Web Application** readiness criterion.
 
-1. **Web UI + API** for upload, schematic playback, and manifest
-   verification.
-2. **Live deploy** of the demo box plus a claimscene B2 bucket with a
-   write-entitled application key (the two remaining user-gated readiness
-   items).
+Remaining (user-gated):
+
+1. **Live deploy** of the container to Cloud Run (`bash
+   deploy/deploy-cloudrun.sh`) and a public URL.
+2. A **`claimscene` B2 bucket** with a write-entitled, scoped application key
+   (the two remaining user-gated readiness items).
 3. Optional premium clip path (`Kling-Image2Video-V2.1-Master`) exposed in
    the UI.
 

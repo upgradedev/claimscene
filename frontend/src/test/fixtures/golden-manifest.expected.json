@@ -1,0 +1,4 @@
+{
+  "manifest_hash": "87a0e086645abdc6e434687dd060d2eb031c8ea2f5f903aab023c3c0b838db04",
+  "note": "GOLDEN fixture: golden-manifest.json is the VERBATIM raw HTTP body of GET /cases/{id} served by the REAL ClaimScene backend (offline mode). It pins the browser-side canonicalizer (src/lib/provenance-verify.ts) to the backend seal (src/claimscene/provenance.py). The sealed disclosure carries an em-dash (U+2014), so the fixture exercises ensure_ascii \\uXXXX escaping. Regenerate: PYTHONPATH=src python scratchpad/gen_golden.py (offline)."
+}

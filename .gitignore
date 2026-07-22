@@ -12,6 +12,12 @@ venv/
 .mypy_cache/
 .coverage
 
+# Node / frontend web client
+node_modules/
+*.tsbuildinfo
+.vite/
+frontend/coverage/
+
 # Env / secrets — NEVER commit real credentials
 .env
 .env.*

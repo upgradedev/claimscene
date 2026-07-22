@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-steel-950 text-blueprint-text font-sans antialiased;
+    /* The drafting sheet: a fine survey grid + a soft amber/cyan wash so the
+       whole surface reads like a blueprint under an instrument light. */
+    background-image:
+      radial-gradient(ellipse 70% 50% at 15% -10%, rgba(56, 189, 248, 0.06), transparent 60%),
+      radial-gradient(ellipse 60% 50% at 100% 0%, rgba(217, 164, 65, 0.06), transparent 55%),
+      linear-gradient(rgba(90, 130, 150, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(90, 130, 150, 0.05) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    background-attachment: fixed;
+    min-height: 100dvh;
+  }
+
+  /* Technical focus ring — cyan, keyboard-first, always visible. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-cyan-400/80 ring-offset-2 ring-offset-steel-950;
+  }
+
+  ::selection {
+    @apply bg-cyan-400/25 text-cyan-100;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-steel-600;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-steel-500;
+  }
+}
+
+@layer components {
+  /* A framed drafting panel with corner ticks — the signature surface. */
+  .sheet {
+    @apply relative rounded-lg border border-steel-700/80 bg-steel-900/70 backdrop-blur-sm;
+  }
+
+  .sheet-ticks::before,
+  .sheet-ticks::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-color: rgba(56, 189, 248, 0.5);
+    pointer-events: none;
+  }
+  .sheet-ticks::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1.5px solid;
+    border-left: 1.5px solid;
+  }
+  .sheet-ticks::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 1.5px solid;
+    border-right: 1.5px solid;
+  }
+
+  .text-amber-glow {
+    @apply text-amber-400;
+    text-shadow: 0 0 18px rgba(217, 164, 65, 0.35);
+  }
+
+  .label-caps {
+    @apply font-mono text-[10px] uppercase tracking-[0.18em] text-blueprint-dim;
+  }
+
+  /* The animated "scanning / sealing" sweep for progress states. */
+  .scanline {
+    position: relative;
+    overflow: hidden;
+  }
+  .scanline::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(56, 189, 248, 0.12) 50%,
+      transparent 100%
+    );
+    animation: sweep 1.6s ease-in-out infinite;
+  }
+}
+
+/* Vestibular safety: silence the sweep for reduced-motion users. */
+@media (prefers-reduced-motion: reduce) {
+  .scanline::after {
+    animation: none;
+  }
+}

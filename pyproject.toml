@@ -25,10 +25,13 @@ live = [
     "genblaze[gmicloud]>=0.4,<0.5",
     "openai>=1.30",
 ]
-# Future HTTP API / demo server seam.
+# HTTP API / web-app server seam. python-multipart backs the multipart
+# upload routes (/cases/extract, /cases/render); fastapi serves the compiled
+# web client as static files from the same origin.
 server = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]

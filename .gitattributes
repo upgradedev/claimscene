@@ -1,2 +1,10 @@
 # Shell scripts must keep LF endings to run on Linux CI / containers.
 *.sh text eol=lf
+
+# Hash-sealed committed artifacts must stay byte-exact. Their SHA-256 is
+# verified at rest — the readiness gate re-hashes the live-illustration
+# evidence, and the frontend provenance-verify test re-hashes the golden
+# manifest fixture — so CRLF normalization on a Windows checkout would break
+# the seal. Treat them as binary (no EOL conversion, ever).
+eval/evidence/** -text
+frontend/src/test/fixtures/* -text
