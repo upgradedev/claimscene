@@ -10,11 +10,35 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .scene import SceneGraph
+
 
 class PhotoRole(str, Enum):
     scene_photo = "scene_photo"
     damage_photo = "damage_photo"
     road_photo = "road_photo"
+
+
+class ReviewClassification(str, Enum):
+    """Closed honesty taxonomy for a sealed AI→human approval receipt.
+
+    A public demo has no authentication, so a demo click is sealed
+    ``interactive_demo`` and can NEVER be labelled ``authenticated_human`` —
+    the server downgrades it absent a genuinely authenticated principal.
+    ``unverified_no_baseline`` is *server-set only* (never client-selectable):
+    it seals honestly when no AI-proposed baseline was supplied to diff
+    against, rather than fabricating an approval delta.
+    """
+
+    interactive_demo = "interactive_demo"
+    authenticated_human = "authenticated_human"
+    unverified_no_baseline = "unverified_no_baseline"
+
+
+#: The subset a client may request; ``unverified_no_baseline`` is server-only.
+CLIENT_REVIEW_CLASSIFICATIONS = frozenset(
+    {ReviewClassification.interactive_demo, ReviewClassification.authenticated_human}
+)
 
 
 class PhotoSource(str, Enum):
@@ -48,3 +72,13 @@ class CaseSpec(BaseModel):
     # premium option (both on GMI Cloud via Genblaze).
     illustration_still_model: str = "seedream-5.0-lite"
     illustration_model: str = "pixverse-v6-i2v"
+    # ── sealed AI→human approval receipt (computed by the pipeline) ──────────
+    # The AI-proposed scene the human reviewed against. When present, the
+    # pipeline seals the server-computed proposed→confirmed field diff; when
+    # ``None`` it seals an honest ``unverified_no_baseline`` review block.
+    proposed_scene: SceneGraph | None = None
+    reviewer_id: str | None = None
+    review_classification: ReviewClassification = ReviewClassification.interactive_demo
+    # The confirmed scene's own notes *before* the human-in-the-loop reset,
+    # carried into the review receipt so the AI's real notes are not lost.
+    prior_confidence_notes: list[str] = Field(default_factory=list)

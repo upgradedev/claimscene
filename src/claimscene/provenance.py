@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .case import CasePhoto
@@ -23,6 +25,7 @@ from .layout import TIMELINE_SCHEMA
 from .scene import SCENE_SCHEMA
 
 MANIFEST_SCHEMA = "claimscene/manifest/v1"
+REVIEW_SCHEMA = "claimscene/review/v1"
 DISCLOSURE = "AI-generated illustration — not evidence"
 WATERMARK = "ILLUSTRATION — NOT EVIDENCE"
 
@@ -62,8 +65,16 @@ def build_manifest(
     illustration: dict,
     report_sha256: str,
     created_at: str | None = None,
+    review: dict | None = None,
 ) -> dict:
-    """Assemble the case manifest and seal it with a canonical hash."""
+    """Assemble the case manifest and seal it with a canonical hash.
+
+    ``review`` is the sealed AI→human approval/correction receipt (see
+    :func:`build_review`). When present it is folded into the sealed body, so
+    ``manifest_hash`` covers it too; when ``None`` the key is *omitted* (not
+    sealed as ``null``) — keeping the manifest byte-shape back-compatible for
+    callers that never supply a review.
+    """
     body = {
         "schema": MANIFEST_SCHEMA,
         "case_id": case_id,
@@ -76,8 +87,78 @@ def build_manifest(
         "illustration": illustration,
         "report": {"media_type": "text/markdown", "sha256": report_sha256},
     }
+    if review is not None:
+        body["review"] = review
     body["manifest_hash"] = sha256_bytes(canonical_json(body))
     return body
+
+
+# ── sealed AI→human approval / correction receipt ────────────────────────────
+def decision_digest(
+    *,
+    classification: str | None,
+    diff: list[dict] | None,
+    reviewer_id: str | None,
+    scene_confirmed_sha256: str | None,
+    scene_proposed_sha256: str | None,
+) -> str:
+    """Self-invalidating digest over exactly the five decision fields.
+
+    Recomputable from the sealed proposed/confirmed hashes, the reviewer, the
+    classification and the field diff — nothing else. If the confirmed scene
+    later drifts (its sealed hash changes) or any field is rewritten, the digest
+    no longer recomputes, voiding the approval. The diff's *list order* is part
+    of the hashed bytes, so :func:`~claimscene.evaluation.diff_scenes` must be
+    deterministic.
+    """
+    return sha256_bytes(canonical_json({
+        "classification": classification,
+        "diff": diff,
+        "reviewer_id": reviewer_id,
+        "scene_confirmed_sha256": scene_confirmed_sha256,
+        "scene_proposed_sha256": scene_proposed_sha256,
+    }))
+
+
+def build_review(
+    *,
+    classification: str,
+    diff: list[dict],
+    counts: dict,
+    reviewer_id: str | None,
+    scene_proposed_sha256: str | None,
+    scene_confirmed_sha256: str | None,
+    prior_confidence_notes: list[str],
+    reviewed_at: str | None = None,
+) -> dict:
+    """Assemble a sealed review receipt (the AI-proposed → human-confirmed delta).
+
+    The server computes the ``diff`` and ``counts`` itself (never trusting a
+    client-supplied delta). ``prior_confidence_notes`` carries the AI's real
+    notes forward non-destructively (the confirmed scene's own notes are reset
+    to the human-in-the-loop line elsewhere). ``classification`` is an honest,
+    closed taxonomy — ``unverified_no_baseline`` with null hashes when no
+    AI-proposed scene was supplied to diff against.
+    """
+    review = {
+        "schema": REVIEW_SCHEMA,
+        "classification": classification,
+        "reviewer_id": reviewer_id,
+        "reviewed_at": reviewed_at or utc_now_iso(),
+        "scene_proposed_sha256": scene_proposed_sha256,
+        "scene_confirmed_sha256": scene_confirmed_sha256,
+        "diff": diff,
+        "counts": counts,
+        "prior_confidence_notes": prior_confidence_notes,
+    }
+    review["decision_digest"] = decision_digest(
+        classification=classification,
+        diff=diff,
+        reviewer_id=reviewer_id,
+        scene_confirmed_sha256=scene_confirmed_sha256,
+        scene_proposed_sha256=scene_proposed_sha256,
+    )
+    return review
 
 
 def verify_manifest(manifest: dict) -> bool:
@@ -112,3 +193,175 @@ def verify_artifact(manifest: dict, artifact: str, data: bytes) -> bool:
     """Confirm ``data`` matches the hash the manifest recorded for ``artifact``."""
     recorded = recorded_sha256(manifest, artifact)
     return recorded is not None and recorded == sha256_bytes(data)
+
+
+# ── aggregate named-check verification receipt ────────────────────────────────
+#: Artifacts re-hashed from stored bytes, in a stable order. Each is checked
+#: only when the manifest actually recorded a hash for it (so a manifest with a
+#: PNG hero but no MP4 animation, offline, skips the animation check).
+_VERIFY_ARTIFACTS = (
+    ("scene_graph", "Scene-graph bytes match the sealed hash"),
+    ("timeline", "Timeline bytes match the sealed hash"),
+    ("schematic_svg", "Schematic SVG bytes match the sealed hash"),
+    ("schematic_hero", "Schematic hero-frame bytes match the sealed hash"),
+    ("schematic_animation", "Schematic animation bytes match the sealed hash"),
+    ("illustration_still", "Illustration still bytes match the sealed hash"),
+    ("illustration", "Illustration clip bytes match the sealed hash"),
+    ("report", "Report bytes match the sealed hash"),
+)
+
+
+@dataclass
+class VerificationReceipt:
+    """The outcome of :func:`verify_all` — a named-check attestation.
+
+    ``checks`` is a list of ``{id, label, passed, evidence}`` rows, ``success``
+    is the AND of every check, and ``digest`` content-addresses the receipt
+    itself. Always fully shaped — even a totally failing verification returns a
+    well-formed receipt rather than raising.
+    """
+
+    checks: list[dict]
+    success: bool
+    digest: str
+
+    def to_dict(self) -> dict:
+        return {"checks": self.checks, "success": self.success, "digest": self.digest}
+
+
+def verify_all(
+    manifest: dict,
+    fetch_bytes: Callable[[str], bytes | None],
+) -> VerificationReceipt:
+    """Re-verify a sealed case from stored bytes, as a named-check receipt.
+
+    Every check is re-run from primary evidence (the stored artifact bytes and
+    the sealed body), never a cached boolean:
+
+      * ``seal.manifest_hash`` — the canonical seal recomputes;
+      * ``artifact.<name>`` — each recorded artifact's stored bytes re-hash to
+        its sealed hash;
+      * ``structural.disclosure`` — the disclosure line is present and exact;
+      * ``structural.input_attribution`` — every input row carries a source;
+      * ``structural.schematic_watermark`` — the schematic SVG carries the
+        NOT-EVIDENCE watermark;
+      * ``structural.illustration_degraded`` — the ``degraded`` flag is
+        internally consistent with the sealing provider;
+      * ``review.decision_digest`` — the approval receipt recomputes from its
+        sealed proposed/confirmed hashes and stays bound to the sealed scene.
+
+    ``fetch_bytes(name)`` returns the stored bytes for an artifact (or ``None``
+    if absent). It is only ever called inside a guarded check, so a raising or
+    ``None``-returning fetcher degrades that one check to ``passed: false`` with
+    the reason as evidence — the receipt is always returned intact.
+    """
+    if not isinstance(manifest, dict):
+        manifest = {}
+    checks: list[dict] = []
+
+    def record(check_id: str, label: str,
+               fn: Callable[[], tuple[bool, str]]) -> None:
+        try:
+            passed, evidence = fn()
+        except Exception as exc:  # a raising check is a failing check (fail-closed)
+            passed, evidence = False, f"{type(exc).__name__}: {exc}"
+        checks.append({"id": check_id, "label": label,
+                       "passed": bool(passed), "evidence": evidence})
+
+    def _seal() -> tuple[bool, str]:
+        ok = verify_manifest(manifest)
+        return ok, ("canonical SHA-256 over the sealed body matches manifest_hash"
+                    if ok else "recomputed canonical SHA-256 does NOT match manifest_hash")
+
+    record("seal.manifest_hash", "Manifest seal recomputes (SHA-256)", _seal)
+
+    def _safe_recorded(name: str) -> str | None:
+        try:
+            return recorded_sha256(manifest, name)
+        except Exception:
+            return None
+
+    for name, label in _VERIFY_ARTIFACTS:
+        recorded = _safe_recorded(name)
+        if recorded is None:
+            continue  # not part of this manifest (e.g. no animation offline)
+
+        def _artifact(name: str = name, recorded: str = recorded) -> tuple[bool, str]:
+            data = fetch_bytes(name)
+            if data is None:
+                return False, f"stored bytes for {name!r} could not be fetched"
+            actual = sha256_bytes(data)
+            return actual == recorded, (
+                f"re-hashed stored bytes {actual[:12]}… "
+                + ("matches the sealed hash" if actual == recorded
+                   else f"!= sealed {recorded[:12]}…"))
+
+        record(f"artifact.{name}", label, _artifact)
+
+    def _disclosure() -> tuple[bool, str]:
+        ok = manifest.get("disclosure") == DISCLOSURE
+        return ok, (f"disclosure == {DISCLOSURE!r}"
+                    if ok else "disclosure line missing or altered")
+
+    record("structural.disclosure", "Disclosure statement present + exact", _disclosure)
+
+    def _inputs() -> tuple[bool, str]:
+        rows = manifest.get("inputs") or []
+        if not rows:
+            return False, "manifest carries no input rows"
+        missing = [i for i, r in enumerate(rows) if not (r or {}).get("source")]
+        return (not missing), ("every input row carries a non-empty source"
+                               if not missing
+                               else f"input rows {missing} missing a source")
+
+    record("structural.input_attribution", "Every input photo carries a source", _inputs)
+
+    def _watermark() -> tuple[bool, str]:
+        data = fetch_bytes("schematic_svg")
+        if data is None:
+            return False, "schematic SVG bytes could not be fetched"
+        count = data.decode("utf-8", "replace").count(WATERMARK)
+        return count >= 1, (f"schematic SVG carries {WATERMARK!r} ×{count}"
+                            if count >= 1 else f"schematic SVG missing {WATERMARK!r}")
+
+    record("structural.schematic_watermark",
+           "Schematic carries the NOT-EVIDENCE watermark", _watermark)
+
+    def _degraded() -> tuple[bool, str]:
+        illustration = manifest.get("illustration") or {}
+        provider = illustration.get("provider") or ""
+        degraded = illustration.get("degraded")
+        expected = provider.startswith("fake")
+        return degraded == expected, (
+            f"degraded={degraded} is consistent with provider {provider!r}"
+            if degraded == expected
+            else f"degraded={degraded} contradicts provider {provider!r}")
+
+    record("structural.illustration_degraded",
+           "Illustration degraded flag is internally consistent", _degraded)
+
+    def _review() -> tuple[bool, str]:
+        review = manifest.get("review")
+        if review is None:
+            return True, "no review receipt sealed (nothing to re-verify)"
+        recomputed = decision_digest(
+            classification=review.get("classification"),
+            diff=review.get("diff"),
+            reviewer_id=review.get("reviewer_id"),
+            scene_confirmed_sha256=review.get("scene_confirmed_sha256"),
+            scene_proposed_sha256=review.get("scene_proposed_sha256"),
+        )
+        if recomputed != review.get("decision_digest"):
+            return False, "decision_digest does NOT recompute from the sealed review fields"
+        confirmed = review.get("scene_confirmed_sha256")
+        if confirmed is not None and confirmed != _safe_recorded("scene_graph"):
+            return False, ("review is bound to a different scene than the sealed "
+                           "scene_graph (the confirmed scene drifted)")
+        return True, "decision_digest recomputes; approval stays bound to the sealed scene"
+
+    record("review.decision_digest",
+           "Approval receipt recomputes from the sealed hashes", _review)
+
+    success = all(c["passed"] for c in checks)
+    digest = sha256_bytes(canonical_json({"checks": checks, "success": success}))
+    return VerificationReceipt(checks=checks, success=success, digest=digest)

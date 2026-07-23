@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
@@ -46,12 +47,19 @@ from pydantic import ValidationError
 
 from . import config, scenarios
 from .adapters import FakeMediaProvider, FakeVisionExtractor
-from .case import CasePhoto, CaseSpec, PhotoRole, PhotoSource
+from .case import (
+    CLIENT_REVIEW_CLASSIFICATIONS,
+    CasePhoto,
+    CaseSpec,
+    PhotoRole,
+    PhotoSource,
+    ReviewClassification,
+)
 from .ingest import MAX_PHOTO_BYTES, MAX_PHOTOS, UploadError, reject_dangerous_bytes
 from .keys import safe_component
 from .layout import LayoutEngine
 from .pipeline import CasePipeline, CaseResult
-from .provenance import input_record
+from .provenance import input_record, verify_all
 from .scene import SceneGraph, scene_to_json, semantic_warnings
 from .schematic import build_static_svg
 
@@ -186,6 +194,75 @@ def _case_index_match(case_id: str, *, kind: str, suffix: str) -> dict | None:
                  if r["key"].startswith(prefix) and r["key"].endswith(suffix)), None)
 
 
+# Manifest artifact name → (index kind, key suffix) for re-fetching the exact
+# stored bytes during server-side verification (mirrors the pipeline's keys).
+_ARTIFACT_STORAGE = {
+    "scene_graph": ("scene", "/scene.json"),
+    "timeline": ("timeline", "/timeline.json"),
+    "schematic_svg": ("schematic", "/schematic.svg"),
+    "schematic_hero": ("schematic", "/schematic.png"),
+    "schematic_animation": ("schematic", "/schematic.mp4"),
+    "illustration_still": ("illustration", "/illustration.png"),
+    "illustration": ("illustration", "/illustration.mp4"),
+    "report": ("report", "/report.md"),
+}
+
+
+def _artifact_fetcher(case_id: str) -> Callable[[str], bytes | None]:
+    """A ``fetch_bytes(name)`` closure that re-reads a case's stored artifact
+    bytes from the store (live B2 or offline) for :func:`verify_all`. Returns
+    ``None`` for an unknown/absent artifact — never raises, so a failing fetch
+    degrades a single verification check, not the whole receipt."""
+    def fetch(name: str) -> bytes | None:
+        spec = _ARTIFACT_STORAGE.get(name)
+        if spec is None:
+            return None
+        kind, suffix = spec
+        match = _case_index_match(case_id, kind=kind, suffix=suffix)
+        if not match:
+            return None
+        try:
+            return _storage.get(match["key"])
+        except Exception:  # pragma: no cover - index row without a live object
+            return None
+    return fetch
+
+
+def _is_authenticated_request() -> bool:
+    """Whether the current request carries a genuinely authenticated principal.
+
+    The public demo ships without an auth layer, so this is always ``False`` —
+    which is exactly why an ``authenticated_human`` request is downgraded to
+    ``interactive_demo`` (a demo click can never be sealed as an authenticated
+    approval). A future authenticated deployment overrides this one seam."""
+    return False
+
+
+def _resolve_classification(raw: str | None) -> ReviewClassification:
+    """Validate + honesty-gate the client's requested review classification.
+
+    An out-of-taxonomy value is a 422 (the closed-enum gate). The server-only
+    ``unverified_no_baseline`` cannot be claimed by a client. And absent a
+    genuinely authenticated principal, an ``authenticated_human`` request is
+    honestly downgraded to ``interactive_demo``."""
+    if raw is None:
+        return ReviewClassification.interactive_demo
+    try:
+        requested = ReviewClassification(raw)
+    except ValueError as exc:
+        raise HTTPException(422, {
+            "error": "invalid review_classification",
+            "allowed": sorted(c.value for c in CLIENT_REVIEW_CLASSIFICATIONS),
+        }) from exc
+    if requested not in CLIENT_REVIEW_CLASSIFICATIONS:
+        raise HTTPException(422, {
+            "error": "review_classification is server-set only", "value": raw})
+    if (requested is ReviewClassification.authenticated_human
+            and not _is_authenticated_request()):
+        return ReviewClassification.interactive_demo
+    return requested
+
+
 def _playback(case_id: str, *, kind: str, suffix: str,
               default_media: str) -> Response:
     """Play back a stored case artifact through a stable api-relative URL.
@@ -235,15 +312,22 @@ def _case_body(result: CaseResult, *, degraded_request: bool) -> dict:
     }
 
 
-def _run_render(scene: SceneGraph, photos: list[CasePhoto], case_id: str) -> dict:
+def _run_render(scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
+                proposed: SceneGraph | None = None, reviewer_id: str | None = None,
+                classification: ReviewClassification = ReviewClassification.interactive_demo,
+                prior_notes: list[str] | None = None) -> dict:
     """Seal the reviewed scene; degrade THIS request honestly on live failure.
 
     On a live media-provider failure the same reviewed scene + inputs are
     re-sealed with the offline provider against the *same* storage — the core
     action never 500s because a remote generation backend misbehaved. A failure
-    of the offline provider itself is a genuine bug and propagates.
+    of the offline provider itself is a genuine bug and propagates. The sealed
+    approval receipt (proposed→confirmed diff, reviewer, classification) rides
+    on the ``CaseSpec`` so both the primary run and the degrade re-run seal it.
     """
-    spec = CaseSpec(case_id=case_id, photos=photos)
+    spec = CaseSpec(case_id=case_id, photos=photos, proposed_scene=proposed,
+                    reviewer_id=reviewer_id, review_classification=classification,
+                    prior_confidence_notes=prior_notes or [])
     extractor = FixedSceneExtractor(scene)
     provider = config.build_provider()
     try:
@@ -377,6 +461,9 @@ async def render_case(
     case_id: Annotated[str, Form()] = "case",
     scenario_id: Annotated[str | None, Form()] = None,
     roles: Annotated[str | None, Form()] = None,
+    proposed_scene: Annotated[str | None, Form()] = None,
+    reviewer_id: Annotated[str | None, Form()] = None,
+    review_classification: Annotated[str | None, Form()] = None,
     files: Annotated[list[UploadFile] | None, File()] = None,
 ) -> dict:
     """Seal a human-reviewed SceneGraph into a full, verifiable case.
@@ -386,13 +473,25 @@ async def render_case(
     type-a-scene flow still seals honestly. The reviewed scene's
     ``confidence_notes`` are reset server-side to a human-in-the-loop note, so
     only server-derived text is sealed.
+
+    When an AI-``proposed_scene`` is supplied, the server seals a signed
+    approval receipt — the proposed→confirmed field diff it computes itself
+    (never the client's), the ``reviewer_id``, and an honesty-gated
+    ``review_classification``. Absent one, an honest ``unverified_no_baseline``
+    receipt is sealed. The AI's real notes are carried into the receipt before
+    the confirmed scene's notes are reset (non-destructive).
     """
     files = files or []
     reviewed = _parse_scene(scene)
+    # Capture the AI's real notes BEFORE the human-in-the-loop reset, so the
+    # approval receipt can carry them forward non-destructively.
+    prior_notes = list(reviewed.confidence_notes)
     reviewed.confidence_notes = [
         "scene reviewed and confirmed by a human operator before rendering "
         "(human-in-the-loop)"
     ]
+    proposed = _parse_scene(proposed_scene) if proposed_scene else None
+    classification = _resolve_classification(review_classification)
 
     if scenario_id:
         try:
@@ -412,7 +511,9 @@ async def render_case(
     # A unique, url-safe id per render so each sealed case is unambiguously
     # addressable (content-addressed keys otherwise collide on the case prefix).
     effective_id = f"{safe_component(case_id) or 'case'}-{uuid.uuid4().hex[:8]}"
-    return _run_render(reviewed, photos, effective_id)
+    return _run_render(reviewed, photos, effective_id, proposed=proposed,
+                       reviewer_id=reviewer_id, classification=classification,
+                       prior_notes=prior_notes)
 
 
 @app.get("/cases/{case_id}")
@@ -423,6 +524,27 @@ def get_case(case_id: str) -> Response:
     if not match:
         raise HTTPException(404, f"no case named {case_id!r}")
     return Response(content=_storage.get(match["key"]), media_type="application/json")
+
+
+@app.get("/cases/{case_id}/verify")
+def verify_case(case_id: str) -> dict:
+    """Server-side re-verification of a sealed case as a named-check receipt.
+
+    Re-fetches the manifest + every recorded artifact from the store and re-runs
+    each check from those bytes (:func:`verify_all`) — the artifact hashes, the
+    seal, the disclosure/attribution/watermark structural invariants, and the
+    approval receipt's self-consistency. Honest-degrade: a genuinely missing
+    case is a 404; anything else returns a fully-shaped receipt (never a 500),
+    with failing checks doing the talking.
+    """
+    match = _case_index_match(case_id, kind="manifest", suffix="/manifest.json")
+    if not match:
+        raise HTTPException(404, f"no case named {case_id!r}")
+    try:
+        manifest = json.loads(_storage.get(match["key"]))
+    except Exception:  # unreadable bytes → a fully-shaped failing receipt, not a 500
+        manifest = {}
+    return verify_all(manifest, _artifact_fetcher(case_id)).to_dict()
 
 
 @app.get("/cases/{case_id}/schematic")
