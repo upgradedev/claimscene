@@ -28,13 +28,19 @@ shares this adapter foundation; shapes verified against the pinned SDK
   ``sha256``, ``size_bytes``, ``media_type``); bytes come from durable
   storage or the hosted URL, then the sealed sha256 is re-verified.
 
-Input hosting has two routes, tried in order:
+Input hosting has two routes:
 
 1. **Chained output** — when the input bytes are an asset this provider just
-   generated (the establish-shot still feeding the i2v clip), its GMI-hosted
-   output URL is reused directly. Probe-verified: GMI's output bucket URLs
-   are directly fetchable by the queue workers, so still → clip chains with
-   zero self-hosting.
+   generated (the establish-shot still feeding the i2v clip), its hosted
+   output URL is reused. With a storage backend attached, Genblaze's sink has
+   already rewritten that output URL to the backend's DURABLE object URL —
+   and for a private bucket that URL needs auth, so the provider's queue
+   worker fetching it unauthenticated gets a 401 and GMICloud rejects the i2v
+   submit with a 400. The chained URL is therefore re-presigned to a
+   short-lived GET the worker can actually fetch (probe-verified: a private
+   B2 durable URL 400s the submit; the same object via a presigned URL
+   generates). With no backend, the provider-hosted output URL is already
+   public and is reused as-is.
 2. **Storage backend** — otherwise the bytes are persisted through the
    Genblaze storage backend (Backblaze B2 via ``genblaze_s3``) under a
    content-addressed key and handed over as a short-lived presigned URL.
@@ -251,6 +257,27 @@ class GenblazeMediaProvider:
         else:
             self.last_asset_url = None
 
+    def _fetchable_chained_url(self, hosted: str, backend: Any | None) -> str:
+        """Return a chained-input URL the provider's server can actually fetch.
+
+        A generated asset persisted through the storage backend has its ``url``
+        rewritten by Genblaze's sink to the backend's DURABLE object URL. For a
+        private bucket that URL needs auth — the provider's queue worker fetches
+        it unauthenticated, gets a 401, and GMICloud rejects the image-to-video
+        submit with a 400 (the illustration-clip failure this fixes). When the
+        hosted URL is one of our backend's own object URLs, mint a short-lived
+        presigned GET so the worker can read it. A URL the backend doesn't own —
+        a genuinely public provider-hosted output (the no-backend chain, or a
+        bucket served from a public base) — is already fetchable and passes
+        through unchanged.
+        """
+        if backend is None:
+            return hosted
+        key = backend.key_from_url(hosted)
+        if key is None:
+            return hosted
+        return backend.get_url(key, expires_in=self._INPUT_URL_EXPIRES_SECS)
+
     def _external_inputs(
         self, inputs: list[bytes] | None, backend: Any | None
     ) -> list[Any] | None:
@@ -272,7 +299,8 @@ class GenblazeMediaProvider:
             media_type = _image_media_type(data)
             hosted = self._hosted_by_sha.get(digest)
             if hosted is not None:
-                assets.append(GbAsset(url=hosted, media_type=media_type,
+                assets.append(GbAsset(url=self._fetchable_chained_url(hosted, backend),
+                                      media_type=media_type,
                                       sha256=digest, size_bytes=len(data)))
                 continue
             if backend is None:
