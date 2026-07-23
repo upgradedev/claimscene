@@ -1,0 +1,4 @@
+{
+  "manifest_hash": "85cdf9aab871379e94974fe537c0a93fdc85ee95cc7db5489f4593343a068dad",
+  "note": "GOLDEN fixture (review-bearing): the VERBATIM raw HTTP body of GET /cases/{id} for a case sealed WITH an AI-proposed baseline, so the manifest carries a `review` block (server-computed proposed\u2192confirmed diff). Pins the browser canonicalizer to a review-bearing backend seal. Regenerate: PYTHONPATH=src python gen_reviewed_golden.py"
+}

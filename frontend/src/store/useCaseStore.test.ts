@@ -114,6 +114,26 @@ describe("useCaseStore", () => {
     expect(s.step).toBe("source");
     expect(s.photos).toEqual([]);
     expect(s.scene).toBeNull();
+    expect(s.proposedScene).toBeNull();
     expect(s.result).toBeNull();
+  });
+
+  it("freezes the AI proposal at extraction, independent of later scene edits", () => {
+    const extraction: ExtractResponse = {
+      scene: emptyScene(),
+      inputs: [],
+      extraction: { extractor: "fake-vision", source: "fake_extraction", mode: "offline" },
+    };
+    useCaseStore.getState().loadExtraction(extraction);
+    const afterLoad = useCaseStore.getState();
+    // The proposal is a frozen, independent copy of the confirmed scene.
+    expect(afterLoad.proposedScene).toEqual(emptyScene());
+    expect(afterLoad.proposedScene).not.toBe(afterLoad.scene);
+
+    // Editing the confirmed scene never mutates the sealed baseline.
+    const edited = { ...emptyScene(), sequence: ["impact"] as const };
+    useCaseStore.getState().setScene(edited as never);
+    expect(useCaseStore.getState().scene?.sequence).toEqual(["impact"]);
+    expect(useCaseStore.getState().proposedScene?.sequence).toEqual(emptyScene().sequence);
   });
 });

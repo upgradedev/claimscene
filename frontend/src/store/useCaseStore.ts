@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ExtractResponse, RenderResponse, Scenario } from "@/lib/api";
-import type { Scene } from "@/lib/scene";
+import { cloneScene, type Scene } from "@/lib/scene";
 
 // The case workflow: pick a source (upload photos OR a sample scenario) →
 // review-adjust the proposed scene → render → result. The reviewed `scene` is
@@ -28,6 +28,10 @@ interface CaseState {
   extraction: ExtractResponse["extraction"] | null;
   inputs: ExtractResponse["inputs"];
   scene: Scene | null;
+  // The AI's ORIGINAL proposal, frozen at extraction time — `scene` above is the
+  // mutable human-confirmed copy. Both are sent to render so the server can seal
+  // the proposed→confirmed approval delta.
+  proposedScene: Scene | null;
 
   // result
   result: RenderResponse | null;
@@ -66,6 +70,7 @@ export const useCaseStore = create<CaseState>((set, get) => ({
   extraction: null,
   inputs: [],
   scene: null,
+  proposedScene: null,
   result: null,
 
   goTo: (step) => set({ step }),
@@ -117,7 +122,14 @@ export const useCaseStore = create<CaseState>((set, get) => ({
   setContextNote: (contextNote) => set({ contextNote }),
 
   loadExtraction: (res) =>
-    set({ extraction: res.extraction, inputs: res.inputs, scene: res.scene }),
+    set({
+      extraction: res.extraction,
+      inputs: res.inputs,
+      scene: res.scene,
+      // Freeze an independent copy of the AI proposal so later edits to `scene`
+      // never mutate the baseline the render seals the delta against.
+      proposedScene: cloneScene(res.scene),
+    }),
 
   setScene: (scene) => set({ scene }),
   setResult: (result) => set({ result, step: "result" }),
@@ -126,7 +138,7 @@ export const useCaseStore = create<CaseState>((set, get) => ({
     get().photos.forEach((p) => URL.revokeObjectURL(p.url));
     set({
       step: "source", caseId: "case", photos: [], scenario: null, contextNote: "",
-      extraction: null, inputs: [], scene: null, result: null,
+      extraction: null, inputs: [], scene: null, proposedScene: null, result: null,
     });
   },
 }));

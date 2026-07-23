@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  fetchCaseVerification,
   parseJsonPreservingLexemes,
   pythonCanonicalJson,
   pythonEscapeString,
@@ -13,6 +14,10 @@ import {
 // ensure_ascii \uXXXX escaping — the exact path a naive JS canonicalizer breaks.
 import goldenRaw from "../test/fixtures/golden-manifest.json?raw";
 import goldenExpected from "../test/fixtures/golden-manifest.expected.json";
+// A second golden body from a case sealed WITH an AI-proposed baseline, so it
+// carries a `review` block — pins that the seal recompute covers the review too.
+import reviewedRaw from "../test/fixtures/golden-manifest-reviewed.json?raw";
+import reviewedExpected from "../test/fixtures/golden-manifest-reviewed.expected.json";
 
 describe("pythonEscapeString (json.dumps ensure_ascii=True parity)", () => {
   it("escapes non-ASCII as lowercase \\uXXXX (the sealed em-dash)", () => {
@@ -72,6 +77,74 @@ describe("verifyManifestText against the GOLDEN backend fixture", () => {
     const outcome = await verifyManifestText(tampered);
     expect(outcome.verified).toBe(false);
     expect(outcome.computedHash).not.toBe(outcome.claimedHash);
+  });
+});
+
+describe("verifyManifestText with a review-bearing manifest (seal covers the review)", () => {
+  it("recomputes the exact seal INCLUDING the sealed review block", async () => {
+    const outcome = await verifyManifestText(reviewedRaw);
+    expect(outcome.claimedHash).toBe(reviewedExpected.manifest_hash);
+    expect(outcome.computedHash).toBe(reviewedExpected.manifest_hash);
+    expect(outcome.verified).toBe(true);
+  });
+
+  it("detects tampering inside the sealed review block", async () => {
+    // The review block is folded into manifest_hash — relabelling the honest
+    // classification must break the seal.
+    const tampered = reviewedRaw.replace(
+      '"classification":"interactive_demo"',
+      '"classification":"authenticated_human"',
+    );
+    expect(tampered).not.toBe(reviewedRaw);
+    expect((await verifyManifestText(tampered)).verified).toBe(false);
+  });
+});
+
+describe("fetchCaseVerification (server-side named-check receipt)", () => {
+  const receipt = {
+    checks: [{ id: "seal.manifest_hash", label: "Manifest seal recomputes",
+               passed: true, evidence: "matches" }],
+    success: true, digest: "d".repeat(64),
+  };
+  const okResponse = (body: unknown) =>
+    ({ ok: true, status: 200, json: async () => body }) as Response;
+
+  it("returns the receipt on a 200 and hits the /verify route", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse(receipt));
+    const res = await fetchCaseVerification("case-1", fetchImpl);
+    expect(res).toEqual({ state: "ok", receipt });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "/cases/case-1/verify",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("is unavailable (not throwing) on a 404", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response);
+    expect((await fetchCaseVerification("x", fetchImpl)).state).toBe("unavailable");
+  });
+
+  it("is unavailable on a network failure", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("down"));
+    expect((await fetchCaseVerification("x", fetchImpl)).state).toBe("unavailable");
+  });
+
+  it("is unavailable on an unexpected receipt shape", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse({ nope: true }));
+    expect((await fetchCaseVerification("x", fetchImpl)).state).toBe("unavailable");
+  });
+
+  it("is unavailable when the body isn't JSON", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => { throw new Error("bad"); },
+    } as unknown as Response);
+    expect((await fetchCaseVerification("x", fetchImpl)).state).toBe("unavailable");
+  });
+
+  it("url-encodes the case id", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse(receipt));
+    await fetchCaseVerification("a/b", fetchImpl);
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe("/cases/a%2Fb/verify");
   });
 });
 
