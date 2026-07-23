@@ -577,6 +577,45 @@ def check_security_traversal_safe_keys() -> tuple[bool, str]:
     return True, f"{len(storage.index)} keys sanitised + content-addressed under hostile input"
 
 
+def check_security_upload_guard_rejects_dangerous() -> tuple[bool, str]:
+    """The upload guard bites at the API boundary: a disguised executable, an
+    over-count upload, and an oversized file are each a clean 4xx (never 5xx),
+    while a normal small photo upload is still accepted (the guard is not
+    over-broad). Driven through the real ``/cases/extract`` route in-process."""
+    from fastapi.testclient import TestClient
+
+    import claimscene.api as capi
+    from claimscene.ingest import MAX_PHOTO_BYTES, MAX_PHOTOS
+
+    client = TestClient(capi.app)
+
+    exe = client.post("/cases/extract",
+                      files=[("files", ("evil.png", b"MZ\x90\x00 evil", "image/png"))])
+    if not 400 <= exe.status_code < 500:
+        return False, f"disguised executable not rejected 4xx (got {exe.status_code})"
+
+    many = [("files", (f"p{i}.png", _PNG_1x1, "image/png"))
+            for i in range(MAX_PHOTOS + 1)]
+    over = client.post("/cases/extract", files=many)
+    if not 400 <= over.status_code < 500:
+        return False, f"over-count upload not rejected 4xx (got {over.status_code})"
+
+    big = b"\x89PNG\r\n\x1a\n" + b"\x00" * (MAX_PHOTO_BYTES + 1)
+    huge = client.post("/cases/extract",
+                       files=[("files", ("big.png", big, "image/png"))])
+    if not 400 <= huge.status_code < 500:
+        return False, f"oversized upload not rejected 4xx (got {huge.status_code})"
+
+    ok = client.post("/cases/extract",
+                     files=[("files", ("p.png", _PNG_1x1, "image/png"))])
+    if ok.status_code != 200:
+        return False, f"a valid small upload was rejected (got {ok.status_code})"
+
+    return True, (f"disguised-exe/over-count(>{MAX_PHOTOS})/oversized"
+                  f"(>{MAX_PHOTO_BYTES // (1024 * 1024)}MB) all 4xx; valid "
+                  "upload 200")
+
+
 def check_security_no_credential_leakage() -> tuple[bool, str]:
     _storage, result = _standard_run()
     blob = json.dumps(result.manifest).lower()
@@ -793,6 +832,9 @@ def build_criteria() -> list[Criterion]:
             Check("security.traversal_safe_keys",
                   "Hostile case id/filename cannot inject into storage keys",
                   2, run=check_security_traversal_safe_keys),
+            Check("security.upload_guard_rejects_dangerous",
+                  "Upload guard: disguised-exe / oversized / over-count → 4xx; valid upload 200",
+                  2, run=check_security_upload_guard_rejects_dangerous),
             Check("security.no_credential_leakage",
                   "No credential material leaks into manifest or report",
                   1, run=check_security_no_credential_leakage),
