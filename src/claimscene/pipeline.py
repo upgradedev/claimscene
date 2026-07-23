@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .case import CaseSpec
+from .case import CaseSpec, ReviewClassification
+from .evaluation import diff_scenes, review_counts
 from .keys import KeyStrategy, make_key
 from .layout import LayoutEngine, Timeline, timeline_to_json
 from .ports import MediaProvider, Renderer, StorageBackend, VisionExtractor
 from .provenance import (
     WATERMARK,
     build_manifest,
+    build_review,
     canonical_json,
     input_record,
     sha256_bytes,
@@ -168,7 +170,37 @@ class CasePipeline:
         self._store(result, "report", "report", "report.md",
                     report_bytes, "text/markdown")
 
-        # 7. Seal the manifest and persist it.
+        # 7. Seal the AI→human approval receipt. The confirmed scene's hash is
+        #    the one just sealed as ``scene_graph`` (so the digest self-voids if
+        #    the confirmed scene ever drifts). With an AI-proposed baseline the
+        #    server computes the proposed→confirmed field diff itself; without
+        #    one it seals an honest ``unverified_no_baseline`` block, null hashes.
+        confirmed_sha = result.artifacts["scene_graph"].sha256
+        if spec.proposed_scene is not None:
+            proposed_sha = sha256_bytes(
+                scene_to_json(spec.proposed_scene).encode("utf-8"))
+            diff = diff_scenes(spec.proposed_scene, scene)
+            review = build_review(
+                classification=spec.review_classification.value,
+                diff=diff,
+                counts=review_counts(diff),
+                reviewer_id=spec.reviewer_id,
+                scene_proposed_sha256=proposed_sha,
+                scene_confirmed_sha256=confirmed_sha,
+                prior_confidence_notes=list(spec.prior_confidence_notes),
+            )
+        else:
+            review = build_review(
+                classification=ReviewClassification.unverified_no_baseline.value,
+                diff=[],
+                counts=review_counts([]),
+                reviewer_id=spec.reviewer_id,
+                scene_proposed_sha256=None,
+                scene_confirmed_sha256=None,
+                prior_confidence_notes=list(spec.prior_confidence_notes),
+            )
+
+        # 8. Seal the manifest and persist it.
         manifest = build_manifest(
             case_id=spec.case_id,
             inputs=input_records,
@@ -196,6 +228,7 @@ class CasePipeline:
                 "degraded": degraded,
             },
             report_sha256=result.artifacts["report"].sha256,
+            review=review,
         )
         result.manifest = manifest
         result.manifest_hash = manifest["manifest_hash"]

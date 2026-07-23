@@ -663,6 +663,84 @@ def check_honest_source_attribution_sealed() -> tuple[bool, str]:
     return True, "per-input source/attribution sealed; re-badging breaks the seal"
 
 
+def check_honest_sealed_approval_receipt() -> tuple[bool, str]:
+    """The AI→human approval receipt is real evidence: the server-computed
+    proposed→confirmed diff seals into the manifest, its decision digest
+    recomputes, the aggregate verify_all receipt passes from stored bytes, and
+    drifting the confirmed scene self-voids the approval (self-invalidating)."""
+    from claimscene.adapters.fakes import FakeMediaProvider, InMemoryStorage
+    from claimscene.case import (
+        CasePhoto,
+        CaseSpec,
+        PhotoSource,
+        ReviewClassification,
+    )
+    from claimscene.pipeline import CasePipeline
+    from claimscene.provenance import decision_digest, verify_all
+    from claimscene.scene import Movement, Road, SceneGraph, Vehicle, VehicleColor
+    from claimscene.schematic import PillowSchematicRenderer
+
+    class _Fixed:
+        name = "fixed"
+
+        def __init__(self, scene):
+            self._scene = scene
+
+        def extract(self, photos, *, context=None):
+            return self._scene.model_copy(deep=True)
+
+    proposed = SceneGraph(
+        road=Road(layout="x_intersection", lanes_per_direction=1, signal="traffic_light"),
+        vehicles=[Vehicle(id="veh_a", kind="car", color="silver"),
+                  Vehicle(id="veh_b", kind="van", color="green")],
+        movements=[Movement(vehicle_id="veh_a", approach="N", maneuver="left_turn",
+                            speed_band="low")])
+    confirmed = proposed.model_copy(deep=True)
+    confirmed.vehicles[0].color = VehicleColor.red  # a human correction
+
+    storage = InMemoryStorage(bucket="readiness-review")
+    result = CasePipeline(_Fixed(confirmed), FakeMediaProvider(), storage,
+                          renderer=PillowSchematicRenderer(animate=False)).run(
+        CaseSpec(case_id="review",
+                 photos=[CasePhoto(filename="p.png", data=_PNG_1x1,
+                                   source=PhotoSource.staged_demo)],
+                 proposed_scene=proposed, reviewer_id="gate",
+                 review_classification=ReviewClassification.interactive_demo))
+
+    review = result.manifest.get("review")
+    if not review:
+        return False, "no review receipt sealed into the manifest"
+    if review["scene_confirmed_sha256"] != result.manifest["scene_graph"]["sha256"]:
+        return False, "review not bound to the sealed scene_graph hash"
+    if decision_digest(
+            classification=review["classification"], diff=review["diff"],
+            reviewer_id=review["reviewer_id"],
+            scene_confirmed_sha256=review["scene_confirmed_sha256"],
+            scene_proposed_sha256=review["scene_proposed_sha256"],
+    ) != review["decision_digest"]:
+        return False, "decision_digest does not recompute from the sealed fields"
+    if not any(r["path"].endswith(".color") and r["changed"] for r in review["diff"]):
+        return False, "the human colour correction is missing from the sealed diff"
+
+    def fetch(name):
+        ref = result.artifacts.get(name)
+        return storage.get(ref.key) if ref is not None else None
+
+    receipt = verify_all(result.manifest, fetch)
+    if not receipt.success:
+        failing = [c["id"] for c in receipt.checks if not c["passed"]]
+        return False, f"verify_all failed on a good case: {failing}"
+
+    drifted = json.loads(json.dumps(result.manifest))
+    drifted["scene_graph"]["sha256"] = "0" * 64
+    review_check = next(c for c in verify_all(drifted, fetch).checks
+                        if c["id"] == "review.decision_digest")
+    if review_check["passed"]:
+        return False, "drifting the confirmed scene did NOT void the approval"
+    return True, ("server-computed review diff + recomputable digest; verify_all "
+                  f"{len(receipt.checks)} checks pass; approval self-voids on drift")
+
+
 # ── web application (real TestClient evidence over the API) ───────────────────
 @lru_cache(maxsize=1)
 def _api_client():
@@ -846,6 +924,10 @@ def build_criteria() -> list[Criterion]:
             Check("honest_media.source_attribution_sealed",
                   "Per-input source/attribution sealed; re-badging detected",
                   2, run=check_honest_source_attribution_sealed),
+            Check("honest_media.sealed_approval_receipt",
+                  "Sealed AI→human approval receipt: server diff, recomputable "
+                  "digest, verify_all passes, self-voids on drift",
+                  3, run=check_honest_sealed_approval_receipt),
         ]),
         Criterion("web", "Web Application (review-adjust UI + API)", [
             Check("web.health_and_scenarios",
