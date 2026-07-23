@@ -40,12 +40,12 @@ jobs:
           pip install -e ".[server]"
       - name: Lint (ruff)
         run: ruff check src tests scripts
-      - name: Unit tests
-        run: pytest tests/unit -v
-      - name: Integration tests
-        run: pytest tests/integration -v
-      - name: E2E tests
-        run: pytest tests/e2e -v
+      # One combined run over ALL tiers (unit + integration + e2e + security +
+      # load) so the coverage number is measured across the whole suite — no
+      # single tier reaches the gate alone. Live-marked smoke tests self-skip
+      # without GMI_API_KEY (CI is credential-free). Backend measures ~96%.
+      - name: Tests + coverage gate (combined, >= 90%)
+        run: pytest --cov=src --cov-report=term-missing --cov-fail-under=90 tests/
       - name: Dependency audit (pip-audit)
         run: pip-audit -r requirements.txt --strict
 
@@ -130,8 +130,8 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
-      - name: Unit tests (vitest)
-        run: npm test
+      - name: Unit + component tests + coverage gate (vitest)
+        run: npm run test:coverage
       - name: Production build
         run: npm run build
 

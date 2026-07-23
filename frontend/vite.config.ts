@@ -39,6 +39,26 @@ export default defineConfig(({ mode }) => {
       environment: "jsdom",
       setupFiles: ["./src/test/setup.ts"],
       css: true,
+      coverage: {
+        provider: "v8",
+        // Count EVERY source file, not only the ones a test imports — so the
+        // percentage is honest and an untested component shows as 0%, never
+        // silently excluded from the denominator.
+        all: true,
+        include: ["src/**/*.{ts,tsx}"],
+        exclude: [
+          "src/main.tsx", // React root bootstrap (createRoot glue) — no logic
+          "src/test/**", // test setup + fixtures
+          "src/**/*.test.{ts,tsx}",
+          "src/**/*.d.ts",
+        ],
+        reporter: ["text-summary", "text", "html"],
+        // Calibrated to what the suite actually achieves (measured: lines +
+        // statements 96%, branches 87%, functions 85%). Lines/statements gate
+        // at 90 (a firm floor well above the 85% target); branches/functions at
+        // 85 (their honest achieved floor). Has teeth without being brittle.
+        thresholds: { lines: 90, statements: 90, branches: 85, functions: 85 },
+      },
     },
   };
 });
