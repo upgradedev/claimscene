@@ -47,6 +47,7 @@ from pydantic import ValidationError
 from . import config, scenarios
 from .adapters import FakeMediaProvider, FakeVisionExtractor
 from .case import CasePhoto, CaseSpec, PhotoRole, PhotoSource
+from .ingest import MAX_PHOTO_BYTES, MAX_PHOTOS, UploadError, reject_dangerous_bytes
 from .keys import safe_component
 from .layout import LayoutEngine
 from .pipeline import CasePipeline, CaseResult
@@ -116,6 +117,36 @@ def _parse_scene(raw: str) -> SceneGraph:
                                   "detail": json.loads(exc.json())}) from exc
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(422, f"scene is not valid JSON: {exc}") from exc
+
+
+async def _read_uploads(files: list[UploadFile]) -> list[bytes]:
+    """Read uploaded photo bytes, enforcing the ingest guardrails at the boundary.
+
+    Bounds are applied so a hostile or oversized upload is a clean 4xx, never a
+    5xx / OOM / a disguised executable in the content-addressed store:
+
+      * the file **count** is capped *before any bytes are read* → 413,
+      * each file's **size** is capped after read → 413,
+      * dangerous **magic bytes** (executables / active markup) are rejected → 400.
+
+    Both upload routes (``/cases/extract``, ``/cases/render``) funnel their
+    files through here, so the guard cannot be bypassed on either surface.
+    """
+    if len(files) > MAX_PHOTOS:
+        raise HTTPException(413, f"too many files (max {MAX_PHOTOS})")
+    datas: list[bytes] = []
+    for f in files:
+        data = await f.read()
+        if len(data) > MAX_PHOTO_BYTES:
+            raise HTTPException(
+                413, f"file {f.filename!r} exceeds the "
+                     f"{MAX_PHOTO_BYTES // (1024 * 1024)}MB per-file limit")
+        try:
+            reject_dangerous_bytes(data)
+        except UploadError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        datas.append(data)
+    return datas
 
 
 def _uploaded_photos(files: list[UploadFile], datas: list[bytes],
@@ -298,7 +329,7 @@ async def extract_case(
             scene = _extractor.extract(photos, context=context)
             source, mechanism = "vlm_extraction", _extractor.name
     elif files:
-        datas = [await f.read() for f in files]
+        datas = await _read_uploads(files)
         if not any(datas):
             raise HTTPException(400, "uploaded files are empty")
         photos = _uploaded_photos(files, datas, roles)
@@ -369,7 +400,7 @@ async def render_case(
         except scenarios.ScenarioError as exc:
             raise HTTPException(404, str(exc)) from exc
     elif files:
-        datas = [await f.read() for f in files]
+        datas = await _read_uploads(files)
         photos = _uploaded_photos(files, datas, roles)
     else:
         photos = [CasePhoto(filename="staged_input.png", data=_PNG_1x1,
