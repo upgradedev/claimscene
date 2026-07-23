@@ -304,3 +304,62 @@ export async function verifyCaseProvenance(
     computedHash,
   };
 }
+
+// ── aggregate named-check verification receipt (GET /cases/{id}/verify) ───────
+export interface VerificationCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  evidence: string;
+}
+
+export interface VerificationReceipt {
+  checks: VerificationCheck[];
+  success: boolean;
+  digest: string;
+}
+
+export type CaseVerification =
+  | { state: "ok"; receipt: VerificationReceipt }
+  | { state: "unavailable"; detail: string };
+
+/** Fetch the server-side named-check verification receipt for a case
+ *  (`GET /cases/{id}/verify`) — each check re-run from the stored B2/bytes.
+ *  Honest-degrade: a 404 / network failure / unexpected shape returns
+ *  `unavailable` rather than throwing, mirroring `verifyCaseProvenance`. */
+export async function fetchCaseVerification(
+  caseId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CaseVerification> {
+  let res: Response;
+  try {
+    res = await fetchImpl(`${API_BASE}/cases/${encodeURIComponent(caseId)}/verify`, {
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    return {
+      state: "unavailable",
+      detail: "The verification receipt couldn't be fetched — check your connection and retry.",
+    };
+  }
+  if (!res.ok) {
+    return {
+      state: "unavailable",
+      detail:
+        res.status === 404
+          ? "This deployment doesn't serve server-side verification for this case."
+          : `The verification receipt couldn't be fetched (HTTP ${res.status}).`,
+    };
+  }
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    return { state: "unavailable", detail: "The verification receipt could not be parsed." };
+  }
+  const receipt = data as Partial<VerificationReceipt> | null;
+  if (!receipt || !Array.isArray(receipt.checks) || typeof receipt.success !== "boolean") {
+    return { state: "unavailable", detail: "The verification receipt had an unexpected shape." };
+  }
+  return { state: "ok", receipt: receipt as VerificationReceipt };
+}

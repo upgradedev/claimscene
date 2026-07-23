@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBytes,
+  ghostSvg,
   illustrationIsPlayable,
   isPlayableUrl,
   shortHash,
@@ -15,6 +16,24 @@ describe("svgToDataUrl", () => {
     const b64 = url.slice("data:image/svg+xml;base64,".length);
     // Reverse of unescape(encodeURIComponent(x)) is decodeURIComponent(escape(x)).
     expect(decodeURIComponent(escape(atob(b64)))).toBe(svg);
+  });
+});
+
+describe("ghostSvg (AI-proposed geometry as a dashed ghost overlay)", () => {
+  it("injects a style that transparentizes the background and dashes strokes", () => {
+    const svg = '<svg viewBox="0 0 10 10"><rect fill="#111"/><line stroke="#0ff"/></svg>';
+    const out = ghostSvg(svg);
+    expect(out).toContain("<style>");
+    expect(out).toContain("rect:first-of-type{opacity:0}");
+    expect(out).toContain("stroke-dasharray:5 3");
+    // Injected immediately after the opening <svg …> tag.
+    expect(out.indexOf("<style>")).toBe(out.indexOf(">") + 1);
+    // The original geometry is preserved (nothing is stripped).
+    expect(out).toContain('<line stroke="#0ff"/>');
+  });
+
+  it("returns the input unchanged when there is no <svg> tag", () => {
+    expect(ghostSvg("not an svg at all")).toBe("not an svg at all");
   });
 });
 

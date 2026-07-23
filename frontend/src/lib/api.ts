@@ -94,6 +94,34 @@ export const RenderResponseSchema = z.object({
 });
 export type RenderResponse = z.infer<typeof RenderResponseSchema>;
 
+// The sealed AI→human approval receipt (review block) inside the manifest.
+export const ReviewDiffRowSchema = z.object({
+  path: z.string(),
+  proposed: z.unknown(),
+  confirmed: z.unknown(),
+  changed: z.boolean(),
+  changed_by: z.string(),
+});
+export type ReviewDiffRow = z.infer<typeof ReviewDiffRowSchema>;
+
+export const ReviewSchema = z.object({
+  schema: z.string(),
+  classification: z.string(),
+  reviewer_id: z.string().nullable(),
+  reviewed_at: z.string(),
+  scene_proposed_sha256: z.string().nullable(),
+  scene_confirmed_sha256: z.string().nullable(),
+  diff: z.array(ReviewDiffRowSchema),
+  counts: z.object({
+    proposed_fields: z.number(),
+    human_changed: z.number(),
+    unchanged: z.number(),
+  }),
+  prior_confidence_notes: z.array(z.string()),
+  decision_digest: z.string(),
+});
+export type Review = z.infer<typeof ReviewSchema>;
+
 // The sealed manifest (GET /cases/{id}) — parsed for the provenance panel.
 export const ManifestSchema = z.object({
   schema: z.string(),
@@ -115,6 +143,8 @@ export const ManifestSchema = z.object({
     degraded: z.boolean(),
   }),
   report: z.object({ media_type: z.string(), sha256: z.string() }),
+  // The review receipt is optional so back-compat manifests still parse.
+  review: ReviewSchema.optional(),
   manifest_hash: z.string(),
 });
 export type Manifest = z.infer<typeof ManifestSchema>;
@@ -178,6 +208,13 @@ export interface RenderRequest {
   scenarioId?: string;
   files?: File[];
   roles?: string[];
+  /** The AI-proposed scene the human reviewed against — sealed as an approval
+   *  receipt (server-computed proposed→confirmed diff). */
+  proposedScene?: Scene;
+  /** Honesty taxonomy for the approval; the server downgrades an unauthenticated
+   *  `authenticated_human` to `interactive_demo`. */
+  reviewClassification?: string;
+  reviewerId?: string;
 }
 
 export const claimsceneApi = {
@@ -210,13 +247,18 @@ export const claimsceneApi = {
     });
   },
 
-  /** Seal the reviewed scene into a full, verifiable case. */
-  render({ scene, caseId = "case", scenarioId, files = [], roles }: RenderRequest): Promise<RenderResponse> {
+  /** Seal the reviewed scene into a full, verifiable case. When a proposed
+   *  scene is supplied, the server seals an AI→human approval receipt. */
+  render({ scene, caseId = "case", scenarioId, files = [], roles,
+           proposedScene, reviewClassification, reviewerId }: RenderRequest): Promise<RenderResponse> {
     const form = new FormData();
     form.append("scene", JSON.stringify(scene));
     form.append("case_id", caseId);
     if (scenarioId) form.append("scenario_id", scenarioId);
     if (roles?.length) form.append("roles", roles.join(","));
+    if (proposedScene) form.append("proposed_scene", JSON.stringify(proposedScene));
+    if (reviewClassification) form.append("review_classification", reviewClassification);
+    if (reviewerId) form.append("reviewer_id", reviewerId);
     for (const file of files) form.append("files", file, file.name);
     return request("/cases/render", RenderResponseSchema, { method: "POST", body: form });
   },

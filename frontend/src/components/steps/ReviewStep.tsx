@@ -63,6 +63,7 @@ function sourceLabel(extraction: ExtractResponse["extraction"] | null): string {
 
 export function ReviewStep() {
   const scene = useCaseStore((s) => s.scene);
+  const proposedScene = useCaseStore((s) => s.proposedScene);
   const extraction = useCaseStore((s) => s.extraction);
   const setScene = useCaseStore((s) => s.setScene);
   const goTo = useCaseStore((s) => s.goTo);
@@ -138,7 +139,7 @@ export function ReviewStep() {
 
         {/* ── live preview (sticky) ──────────────────────────────────── */}
         <div className="lg:sticky lg:top-20 lg:self-start">
-          <SchematicPreview scene={scene} />
+          <SchematicPreview scene={scene} proposedScene={proposedScene} />
           <div className="mt-4 flex flex-col gap-2">
             <Button
               size="lg"

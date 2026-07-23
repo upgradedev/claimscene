@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Loader2, Ruler } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { cn, svgToDataUrl } from "@/lib/utils";
@@ -12,11 +13,15 @@ export function SchematicView({
   loading = false,
   caption,
   className,
+  overlay,
 }: {
   svg: string | null;
   loading?: boolean;
   caption?: string;
   className?: string;
+  /** Absolutely-positioned content drawn over the schematic image area — used
+   *  to ghost the AI-proposed geometry beneath the solid confirmed scene. */
+  overlay?: ReactNode;
 }) {
   return (
     <figure
@@ -50,6 +55,7 @@ export function SchematicView({
             )}
           </div>
         )}
+        {overlay}
       </div>
       {caption && (
         <figcaption className="border-t border-steel-700/70 px-3 py-1.5 font-mono text-[11px] text-blueprint-dim">

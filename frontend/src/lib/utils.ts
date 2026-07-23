@@ -39,6 +39,21 @@ export function svgToDataUrl(svg: string): string {
   return `data:image/svg+xml;base64,${btoa(utf8)}`;
 }
 
+/** Turn a schematic SVG into a "ghost" overlay of the AI-PROPOSED geometry:
+ *  transparent background, dashed strokes, and semi-transparent fills, so it can
+ *  be drawn over the SOLID human-confirmed schematic without hiding it — the
+ *  human-in-the-loop delta made visible on the artifact. The rules are injected
+ *  as an internal <style>; because the SVG is still rendered via <img>, the
+ *  style applies but no script can run. Returns the input unchanged when it has
+ *  no <svg> tag (defensive). */
+export function ghostSvg(svg: string): string {
+  const style =
+    "<style>rect:first-of-type{opacity:0}" +
+    "line,rect,circle,polygon,path{stroke-dasharray:5 3}" +
+    "polygon,circle{fill-opacity:.4}</style>";
+  return svg.replace(/(<svg\b[^>]*>)/i, `$1${style}`);
+}
+
 /** Whether a URL is loadable in the browser (http/https/relative api routes). */
 export function isPlayableUrl(url: string | null | undefined): url is string {
   return !!url && (/^https?:\/\//i.test(url) || url.startsWith("/"));

@@ -36,6 +36,21 @@ describe("RenderStep", () => {
     expect(useCaseStore.getState().step).toBe("result");
   });
 
+  it("sends the frozen AI proposal + honest classification for the approval receipt", async () => {
+    const proposed = emptyScene();
+    useCaseStore.setState({ proposedScene: proposed });
+    const spy = vi.spyOn(claimsceneApi, "render").mockResolvedValue({ case_id: "s" } as never);
+    renderStep();
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        proposedScene: proposed,
+        reviewClassification: "interactive_demo",
+        scenarioId: "s02_left_cross",
+      }),
+    );
+  });
+
   it("shows an error with retry + back on failure", async () => {
     vi.spyOn(claimsceneApi, "render").mockRejectedValue(new Error("render blew up"));
     renderStep();

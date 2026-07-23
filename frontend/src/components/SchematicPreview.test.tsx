@@ -50,4 +50,33 @@ describe("SchematicPreview wiring (review-adjust live update)", () => {
     render(<SchematicPreview scene={emptyScene()} debounceMs={0} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(/boom/);
   });
+
+  it("ghosts the AI proposal as a dashed overlay once the scene is edited", async () => {
+    const spy = vi
+      .spyOn(claimsceneApi, "previewSchematic")
+      .mockResolvedValue(previewOk("<svg><rect/></svg>"));
+    const proposed = emptyScene();
+    const edited = setRoad(emptyScene(), { signal: "stop_sign" });
+    const { container } = render(
+      <SchematicPreview scene={edited} proposedScene={proposed} debounceMs={0} />,
+    );
+    // Both the confirmed scene AND the frozen proposal are previewed.
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(edited));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(proposed));
+    // The correction legend + dashed/solid caption make the edit visible.
+    expect(await screen.findByText(/dashed ghost is what the AI proposed/i)).toBeInTheDocument();
+    expect(screen.getByText(/dashed = AI-proposed/i)).toBeInTheDocument();
+    // Two <img> layers: the solid confirmed schematic + the ghosted proposal.
+    await waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(2));
+  });
+
+  it("does not ghost when the confirmed scene equals the proposal (no edits)", async () => {
+    vi.spyOn(claimsceneApi, "previewSchematic").mockResolvedValue(previewOk("<svg><rect/></svg>"));
+    const { container } = render(
+      <SchematicPreview scene={emptyScene()} proposedScene={emptyScene()} debounceMs={0} />,
+    );
+    await screen.findByRole("img"); // the confirmed schematic rendered
+    expect(screen.queryByText(/dashed ghost/i)).not.toBeInTheDocument();
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+  });
 });

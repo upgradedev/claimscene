@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, claimsceneApi } from "./api";
+import { ApiError, ManifestSchema, claimsceneApi } from "./api";
 import { emptyScene } from "./scene";
 
 // ── fetch stubbing ────────────────────────────────────────────────────────────
@@ -89,6 +89,21 @@ describe("claimsceneApi (typed client + zod validation)", () => {
     const body = fetchMock.mock.calls[0]![1]!.body as FormData;
     expect(JSON.parse(body.get("scene") as string).schema).toBe("claimscene/scene/v1");
     expect(body.get("case_id")).toBe("c");
+    // No review fields when not reviewing against a baseline.
+    expect(body.get("proposed_scene")).toBeNull();
+    expect(body.get("review_classification")).toBeNull();
+  });
+
+  it("render() sends the AI-proposed baseline + honest classification for the receipt", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(renderBody()));
+    await claimsceneApi.render({
+      scene: emptyScene(), caseId: "c", proposedScene: emptyScene(),
+      reviewClassification: "interactive_demo", reviewerId: "alex",
+    });
+    const body = fetchMock.mock.calls[0]![1]!.body as FormData;
+    expect(JSON.parse(body.get("proposed_scene") as string).schema).toBe("claimscene/scene/v1");
+    expect(body.get("review_classification")).toBe("interactive_demo");
+    expect(body.get("reviewer_id")).toBe("alex");
   });
 
   it("manifest() url-encodes the case id", async () => {
@@ -100,6 +115,33 @@ describe("claimsceneApi (typed client + zod validation)", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(manifest));
     await claimsceneApi.manifest("a/b");
     expect(fetchMock.mock.calls[0]![0]).toBe("/cases/a%2Fb");
+  });
+
+  it("ManifestSchema parses an optional review block (and back-compat without one)", () => {
+    const base = {
+      schema: "claimscene/manifest/v1", case_id: "c", created_at: "t", disclosure: "d",
+      inputs: [], scene_graph: { schema: "s", sha256: "h" },
+      timeline: { schema: "t", sha256: "h" }, schematic: {},
+      illustration: { provider: "fake-media", model: "m", prompt: "p", sha256: "h", degraded: true },
+      report: { media_type: "text/markdown", sha256: "h" }, manifest_hash: "h",
+    };
+    expect(ManifestSchema.parse(base).review).toBeUndefined(); // back-compat
+    const withReview = {
+      ...base,
+      review: {
+        schema: "claimscene/review/v1", classification: "interactive_demo",
+        reviewer_id: "r", reviewed_at: "t", scene_proposed_sha256: "a",
+        scene_confirmed_sha256: "b",
+        diff: [{ path: "road.signal", proposed: "none", confirmed: "stop_sign",
+                 changed: true, changed_by: "human" }],
+        counts: { proposed_fields: 1, human_changed: 1, unchanged: 0 },
+        prior_confidence_notes: ["n"], decision_digest: "d",
+      },
+    };
+    const parsed = ManifestSchema.parse(withReview);
+    expect(parsed.review?.classification).toBe("interactive_demo");
+    expect(parsed.review?.counts.human_changed).toBe(1);
+    expect(parsed.review?.diff[0]?.confirmed).toBe("stop_sign");
   });
 
   // ── error surfaces ──────────────────────────────────────────────────────────

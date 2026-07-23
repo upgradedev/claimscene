@@ -13,6 +13,7 @@ const STAGES = [
 
 export function RenderStep() {
   const scene = useCaseStore((s) => s.scene);
+  const proposedScene = useCaseStore((s) => s.proposedScene);
   const scenario = useCaseStore((s) => s.scenario);
   const photos = useCaseStore((s) => s.photos);
   const caseId = useCaseStore((s) => s.caseId);
@@ -25,14 +26,21 @@ export function RenderStep() {
   const start = useCallback(() => {
     if (!scene) return;
     setPhase(0);
+    // Seal the AI→human approval receipt: send the frozen AI proposal + an honest
+    // classification. The public demo is unauthenticated, so `interactive_demo`
+    // is the truthful label (the server also enforces this).
+    const review = {
+      proposedScene: proposedScene ?? undefined,
+      reviewClassification: "interactive_demo",
+    };
     render.mutate(
       scenario
-        ? { scene, caseId, scenarioId: scenario.id }
-        : { scene, caseId, files: photos.map((p) => p.file), roles: photos.map((p) => p.role) },
+        ? { scene, caseId, scenarioId: scenario.id, ...review }
+        : { scene, caseId, files: photos.map((p) => p.file), roles: photos.map((p) => p.role), ...review },
       { onSuccess: (res) => setResult(res) },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene, scenario, photos, caseId, setResult]);
+  }, [scene, proposedScene, scenario, photos, caseId, setResult]);
 
   useEffect(() => {
     if (fired.current) return;
