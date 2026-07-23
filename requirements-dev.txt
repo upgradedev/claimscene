@@ -2,10 +2,15 @@
 pytest>=8.0
 ruff>=0.4
 pip-audit>=2.7
-# Real Genblaze SDK core (pure-Python, no credentials) so the SDK-boundary
-# contract tests in tests/integration/test_genblaze_contract.py actually RUN
-# in CI — guarding the adapter against Genblaze API drift.
+# Real Genblaze SDK core + the GMICloud provider (both pure-Python, no
+# credentials) so the SDK-boundary contract tests in
+# tests/integration/test_genblaze_contract.py actually RUN in CI — guarding
+# the adapter against Genblaze API drift. genblaze-gmicloud ships the video
+# ``ModelRegistry`` whose ``prepare_payload`` the pixverse-v6-i2v routing pin
+# exercises offline (no key, no network) — without it that pin would skip in
+# CI and a future SDK bump dropping the pixverse family would go uncaught.
 genblaze-core>=0.3.4,<0.4
+genblaze-gmicloud>=0.3.4,<0.4
 # httpx backs FastAPI's TestClient (the API + e2e tests exercise every route
 # in-process, no network). boto3 lets the B2 presign contract test construct a
 # real S3 client and assert SigV4 + region (no creds/network at construction).

@@ -60,11 +60,19 @@ def _gb_asset(url: str, media_type: str, sha256: str, size_bytes: int | None = N
 
 def _mem_backend():
     """A faithful in-memory implementation of Genblaze's ``StorageBackend``
-    ABC — exercises the real sink → store → readback path offline."""
+    ABC — exercises the real sink → store → readback path offline.
+
+    ``get_url`` returns a DISTINGUISHABLE presigned form (a ``?sig=`` query the
+    durable URL never carries), mirroring a real backend where the presigned
+    GET and the persistable durable URL are different strings. Without that
+    distinction the chained-input presign regression would be vacuous. The
+    prefix is ``https://`` so the adapter's chaining seam (which only remembers
+    ``https://`` output URLs) treats it like a real hosted asset.
+    """
     from genblaze_core.storage.base import StorageBackend
 
     class MemBackend(StorageBackend):
-        _PREFIX = "memory://bucket/"
+        _PREFIX = "https://mem.test/bucket/"
 
         def __init__(self) -> None:
             self.store: dict[str, bytes] = {}
@@ -86,13 +94,17 @@ def _mem_backend():
             self.store.pop(key, None)
 
         def get_url(self, key, *, expires_in=3600):
-            return self.get_durable_url(key)
+            # Presigned form — a fetchable GET, distinct from the durable URL.
+            return f"{self.get_durable_url(key)}?sig={expires_in}"
 
         def get_durable_url(self, key):
+            # Persistable, credential-free — needs auth to actually GET.
             return f"{self._PREFIX}{key}"
 
         def key_from_url(self, url):
-            return url[len(self._PREFIX):] if url.startswith(self._PREFIX) else None
+            if not url.startswith(self._PREFIX):
+                return None
+            return url[len(self._PREFIX):].split("?", 1)[0]
 
     return MemBackend()
 
@@ -222,6 +234,47 @@ def test_gmicloud_provider_classes_importable_when_installed():
         assert hasattr(gmi, cls), f"genblaze_gmicloud missing {cls}"
 
 
+def test_pixverse_v6_i2v_routes_image_to_native_slot():
+    """Pin the live routing the illustration clip depends on.
+
+    gmicloud's real video ``ModelRegistry`` must resolve ``pixverse-v6-i2v`` to
+    the pixverse family and route the chained input image to the native
+    ``image`` slot with ``quality`` + ``duration`` on the allowlist. If a
+    future SDK bump drops the pixverse family, the slug falls to the permissive
+    fallback and the payload shape drifts — which is exactly what 400s the
+    live GMICloud submit. RUNS in CI: genblaze-gmicloud is in
+    requirements-dev.txt (pure-Python, no key, no network at prepare_payload).
+    """
+    video_models = pytest.importorskip(
+        "genblaze_gmicloud.models.video",
+        reason="genblaze-gmicloud (requirements-dev.txt) ships the video registry",
+    )
+    from genblaze_core.models.asset import Asset as GbAsset
+    from genblaze_core.models.enums import Modality
+    from genblaze_core.models.step import Step
+
+    reg = video_models.build_video_registry()
+    match = reg.match_family("pixverse-v6-i2v")
+    assert match is not None, "pixverse-v6-i2v no longer matches a family (would hit fallback)"
+    assert match.family.name == "gmi-video-pixverse"
+
+    spec = reg.get("pixverse-v6-i2v")
+    for allowed in ("image", "quality", "duration"):
+        assert allowed in spec.param_allowlist, f"pixverse spec dropped {allowed!r}"
+
+    img = GbAsset(url="https://host.test/chain-inputs/still.png",
+                  media_type="image/png", sha256="a" * 64, size_bytes=10)
+    step = Step(provider="gmicloud", model="pixverse-v6-i2v", prompt="orbit",
+                modality=Modality.VIDEO,
+                params={"duration": 5, "quality": "360p"}, inputs=[img])
+    payload = reg.prepare_payload(step)
+    # The image URL lands in the native ``image`` slot (not dropped, not misrouted).
+    assert payload["image"] == "https://host.test/chain-inputs/still.png"
+    assert payload["duration"] == 5
+    assert payload["quality"] == "360p"
+    assert payload["prompt"] == "orbit"
+
+
 # ── 4. input attachment (the Cinemory PR #15 lesson) ─────────────────────────
 def test_generate_attaches_image_input_as_external_asset():
     photo = _PNG_MAGIC + b"real-photo-bytes" * 32
@@ -343,3 +396,48 @@ def test_generated_still_chains_into_the_clip_without_self_hosting():
     assert len(step.inputs) == 1
     assert step.inputs[0].url == still_url  # the hosted URL was reused
     assert step.inputs[0].sha256 == still_sha
+
+
+def test_chained_still_input_is_presigned_not_raw_durable():
+    """The live illustration-clip fix (H2 regression guard).
+
+    With a storage backend attached, Genblaze's sink rewrites the establish
+    still's output URL to the backend's DURABLE (private) object URL. Chaining
+    that raw URL into the i2v clip makes the provider's queue worker fetch it
+    unauthenticated → 401 → GMICloud rejects the submit with a 400 (the exact
+    live failure). The chained input MUST instead be re-presigned to a
+    fetchable GET for the *same* object.
+    """
+    backend = _mem_backend()
+    still = _PNG_MAGIC + b"establish-shot" * 40
+    still_sha = hashlib.sha256(still).hexdigest()
+    clip = b"CHAINED-CLIP" + b"\x05" * 300
+    clip_sha = hashlib.sha256(clip).hexdigest()
+    # The sink already persisted both and rewrote their URLs to the durable form.
+    backend.put("assets/still.png", still)
+    backend.put("assets/clip.mp4", clip)
+    still_durable = backend.get_durable_url("assets/still.png")
+    clip_durable = backend.get_durable_url("assets/clip.mp4")
+
+    image_provider = _mock_provider(
+        [_gb_asset(still_durable, "image/png", still_sha, size_bytes=len(still))])
+    video_provider = _mock_provider(
+        [_gb_asset(clip_durable, "video/mp4", clip_sha, size_bytes=len(clip))])
+    adapter = GenblazeMediaProvider(
+        image_provider_obj=image_provider, video_provider_obj=video_provider,
+        backend=backend, downloader=_forbid_download)
+
+    got_still = adapter.generate(model="seedream-5.0-lite", prompt="diorama",
+                                 modality="image")
+    assert got_still == still
+    # The adapter remembered the private durable URL — what the sink leaves behind.
+    assert adapter.last_asset_url == still_durable
+
+    adapter.generate(model="pixverse-v6-i2v", prompt="orbit", modality="video",
+                     inputs=[still])
+    chained = video_provider.received_steps[-1].inputs[0].url
+    assert chained != still_durable, "raw private durable URL would 401 the provider fetch"
+    # Same object, presigned into a fetchable GET.
+    assert chained == backend.get_url(backend.key_from_url(still_durable), expires_in=3600)
+    assert "?sig=" in chained  # the distinguishable presigned form
+    assert backend.key_from_url(chained) == "assets/still.png"
