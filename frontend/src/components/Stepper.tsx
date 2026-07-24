@@ -19,7 +19,11 @@ export function Stepper({ current }: { current: Step }) {
         const done = i < idx;
         const active = i === idx;
         return (
-          <li key={s.key} className="flex flex-1 items-center gap-2">
+          <li
+            key={s.key}
+            aria-current={active ? "step" : undefined}
+            className="flex flex-1 items-center gap-2"
+          >
             <span
               className={cn(
                 "grid h-7 w-7 shrink-0 place-items-center rounded border text-[11px] transition-colors",

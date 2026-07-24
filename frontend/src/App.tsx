@@ -23,9 +23,22 @@ export default function App() {
 
   return (
     <div className="flex min-h-dvh flex-col">
+      {/* Keyboard-first: the very first Tab reveals a skip link straight to the
+          main region (bypassing the disclosure banner + header). */}
+      <a
+        href="#main"
+        // Padding/background live behind `focus:` — applied to a bare `sr-only`
+        // element they'd win over its 1px box (border-box) and leave a stray
+        // visible sliver. Off-screen until focused, a real panel once focused.
+        className="sr-only rounded font-mono text-sm text-blueprint-text focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:bg-steel-800 focus:px-4 focus:py-2 focus:ring-2 focus:ring-cyan-400"
+      >
+        Skip to main content
+      </a>
       <DisclosureBanner />
       <Header />
-      <main className="flex-1">{started ? <Studio /> : <Hero onStart={start} />}</main>
+      <main id="main" tabIndex={-1} className="flex-1 outline-none">
+        {started ? <Studio /> : <Hero onStart={start} />}
+      </main>
       <Footer />
     </div>
   );

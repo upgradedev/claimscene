@@ -33,7 +33,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
             <Sparkles className="h-4 w-4" /> Try a sample scenario
           </Button>
         </div>
-        <p className="mt-3 font-mono text-[11px] text-blueprint-dim">
+        <p className="mt-3 font-mono text-xs text-blueprint-dim">
           No photos needed — run the whole flow on a committed synthetic scenario.
         </p>
       </motion.div>
@@ -127,7 +127,8 @@ function Pillar({ icon, title, body }: { icon: React.ReactNode; title: string; b
     <div className="sheet p-4">
       <div className="flex items-center gap-2">
         <span className="grid h-7 w-7 place-items-center rounded border border-steel-600 bg-steel-800">{icon}</span>
-        <h3 className="font-mono text-sm font-semibold text-blueprint-text">{title}</h3>
+        {/* h2 (not h3): keeps the landing outline h1 → h2 with no skipped level. */}
+        <h2 className="font-mono text-sm font-semibold text-blueprint-text">{title}</h2>
       </div>
       <p className="mt-2 text-xs text-blueprint-dim">{body}</p>
     </div>

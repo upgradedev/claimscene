@@ -41,7 +41,12 @@ export default {
         },
         blueprint: {
           text: "#cfe3ee",
-          dim: "#5f7d8f",
+          // Muted body/label text. Lifted from the original #5f7d8f (which read
+          // 4.05–4.48:1 and FAILED WCAG AA 4.5:1 on every surface it sits on) to
+          // #7a93a4, which clears 4.5:1 on the whole steel range (4.95:1 on the
+          // lightest steel-800 … 6.08:1 on steel-950) while staying the dimmest
+          // text token. One token, every muted-text contrast fix.
+          dim: "#7a93a4",
           line: "#17303d",
         },
         border: "hsl(198 30% 24% / 0.55)",
@@ -75,11 +80,18 @@ export default {
           "0%, 100%": { opacity: "0.5" },
           "50%": { opacity: "1" },
         },
+        // A sliding segment for the indeterminate extract-progress bar.
+        indeterminate: {
+          "0%": { transform: "translateX(-120%)" },
+          "60%": { transform: "translateX(160%)" },
+          "100%": { transform: "translateX(320%)" },
+        },
       },
       animation: {
         "fade-up": "fade-up 0.5s cubic-bezier(0.22,1,0.36,1) both",
         sweep: "sweep 1.6s ease-in-out infinite",
         "ping-soft": "ping-soft 2.5s ease-in-out infinite",
+        indeterminate: "indeterminate 1.4s ease-in-out infinite",
       },
     },
   },
