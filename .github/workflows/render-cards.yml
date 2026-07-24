@@ -1,0 +1,62 @@
+name: Render Gallery Cards
+
+# Regenerates demo/assets/*.png from demo/assets/src/*.patch.json (see
+# scripts/patch_gallery_card.py for why this is a surgical patch of the
+# committed cards rather than a from-scratch re-render). Runs in CI --not
+# locally-- so the output is reproducible from a clean checkout on any
+# machine, with no dependency on fonts that only exist on a contributor's
+# own box. Commits the rendered PNG(s) back onto the same branch when they
+# change; that commit uses the default GITHUB_TOKEN, which GitHub does not
+# re-trigger workflows for, so this cannot loop.
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - "demo/assets/src/**"
+      - "scripts/patch_gallery_card.py"
+      - ".github/workflows/render-cards.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install renderer deps (Pillow + DejaVu fonts)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core
+          pip install "pillow>=10.2"
+
+      - name: Render every card patch spec
+        run: |
+          shopt -s nullglob
+          specs=(demo/assets/src/*.patch.json)
+          if [ ${#specs[@]} -eq 0 ]; then
+            echo "No *.patch.json specs found under demo/assets/src/ -- nothing to render."
+            exit 0
+          fi
+          python scripts/patch_gallery_card.py "${specs[@]}"
+
+      - name: Commit rendered PNG(s) back to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add demo/assets/*.png
+          if git diff --cached --quiet; then
+            echo "Rendered output is byte-identical to what's committed -- nothing to do."
+          else
+            git commit -m "chore(demo): render gallery cards from demo/assets/src/ patch specs"
+            git push origin "HEAD:${{ github.head_ref || github.ref_name }}"
+          fi
