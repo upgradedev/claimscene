@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ClaimScene submission READINESS GATE (foundation skeleton).
 
-A machine-checkable gate that scores this repo against six criteria — the
+A machine-checkable gate that scores this repo against seven criteria — the
 four Backblaze Generative Media Hackathon criteria (**Real-World Utility**,
 **Production Readiness**, **B2 Storage & Orchestration**, **Use of
 Genblaze**) plus ClaimScene's own two: **Application Security** and
