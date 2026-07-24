@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .case import CasePhoto, PhotoRole, PhotoSource
 from .keys import safe_component
+from .provenance import sha256_bytes
 from .scene import SceneGraph, scene_to_json
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -165,3 +166,31 @@ def scenario_photos(scenario_id: str) -> list[CasePhoto]:
             attribution=attribution, license=license_,
         ))
     return photos
+
+
+#: Committed eval input assets pinned by the external reproducibility anchor:
+#: every scenario's synthetic ``view_*.jpg`` plus the truth-bearing
+#: ``manifest.json`` (which carries each scenario's ground-truth SceneGraph
+#: inline). ``_spend.json`` is a cost ledger, not an eval input, so it is not
+#: anchored. This is the single enumeration rule shared by the committed
+#: ``eval/golden-digests.json``, the CI test, and the readiness gate — so the
+#: pin set and the completeness check can never diverge.
+def eval_input_digests(scenarios_path: Path | str | None = None) -> dict[str, str]:
+    """SHA-256 of every committed eval input asset, keyed by path relative to
+    the scenarios directory (e.g. ``s01_rear_end/view_a.jpg``, ``manifest.json``).
+
+    Hashed with the product's own :func:`~claimscene.provenance.sha256_bytes`,
+    so the anchor asserts the exact bytes *and* the exact hashing the pipeline
+    uses stay reproducible. Deterministic ordering (sorted) makes the mapping
+    stable across runs and platforms.
+    """
+    base = Path(scenarios_path) if scenarios_path else scenarios_dir()
+    digests: dict[str, str] = {}
+    for sub in sorted(base.iterdir()):
+        if sub.is_dir():
+            for image in sorted(sub.glob("view_*.jpg")):
+                digests[f"{sub.name}/{image.name}"] = sha256_bytes(image.read_bytes())
+    manifest = base / "manifest.json"
+    if manifest.is_file():
+        digests["manifest.json"] = sha256_bytes(manifest.read_bytes())
+    return digests

@@ -311,6 +311,36 @@ def check_utility_eval_scoreboard_floor() -> tuple[bool, str]:
                   f"{boards[-1].name}")
 
 
+def check_reproducibility_eval_digests_anchored() -> tuple[bool, str]:
+    """The committed eval inputs are externally anchored + reproducible.
+
+    ``eval/golden-digests.json`` pins the SHA-256 of every synthetic scenario
+    photo and the truth-bearing ``manifest.json``; the live-computed digests
+    (the product's own hashing, via :func:`claimscene.scenarios.eval_input_digests`)
+    must still match. Verify today is self-consistency (recompute the seal and it
+    passes); this anchors the inputs *outside* the sealed artifacts, so a silent
+    drift or a swapped eval photo is caught in CI."""
+    from claimscene.scenarios import eval_input_digests
+
+    anchor_path = _REPO_ROOT / "eval" / "golden-digests.json"
+    if not anchor_path.exists():
+        return False, "eval/golden-digests.json missing"
+    anchor = json.loads(anchor_path.read_text("utf-8"))
+    if anchor.get("schema") != "claimscene/golden-digests/v1":
+        return False, "golden-digests schema mismatch"
+    if anchor.get("algorithm") != "sha256":
+        return False, "golden-digests algorithm is not sha256"
+    pinned = anchor.get("assets") or {}
+    live = eval_input_digests(_EVAL_SCENARIOS_DIR)
+    if live != pinned:
+        drift = sorted(set(live) ^ set(pinned)) or sorted(
+            k for k in live if live[k] != pinned.get(k))
+        return False, (f"eval inputs drifted from the anchor: {drift[:5]} "
+                       "(regen: scripts/gen_golden_digests.py)")
+    return True, (f"{len(pinned)} eval input assets externally anchored; live "
+                  "digests match (external reproducibility anchor)")
+
+
 def check_prod_live_no_creds_degrades() -> tuple[bool, str]:
     """CLAIMSCENE_MODE=live with no creds still seals a full case (no crash)."""
     saved = {name: os.environ.pop(name, None) for name in _B2_ENV}
@@ -866,6 +896,11 @@ def build_criteria() -> list[Criterion]:
             Check("utility.eval_scoreboard_floor",
                   "Committed eval set + measured accuracy above the floor",
                   2, run=check_utility_eval_scoreboard_floor),
+        ]),
+        Criterion("reproducibility", "Reproducibility", [
+            Check("reproducibility.eval_digests_anchored",
+                  "Committed eval inputs externally anchored; live digests match",
+                  2, run=check_reproducibility_eval_digests_anchored),
         ]),
         Criterion("production", "Production Readiness", [
             Check("production.live_no_creds_degrades",

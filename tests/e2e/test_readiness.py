@@ -59,5 +59,5 @@ def test_report_schema_and_criteria_cover_the_thesis():
     report = readiness.evaluate()
     assert report["schema"] == "claimscene/readiness/v1"
     ids = {c["id"] for c in report["criteria"]}
-    assert ids == {"utility", "production", "b2", "genblaze", "security",
-                   "honest_media", "web"}
+    assert ids == {"utility", "reproducibility", "production", "b2", "genblaze",
+                   "security", "honest_media", "web"}

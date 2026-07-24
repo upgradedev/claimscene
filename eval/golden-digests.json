@@ -1,0 +1,30 @@
+{
+  "algorithm": "sha256",
+  "assets": {
+    "manifest.json": "fc41814265c379734d0b791d512bfba524bb8261cff000b8f1195a2998860eaa",
+    "s01_rear_end/view_a.jpg": "c7db8af692307470fbe1a66fa0fefc60b5ea5043dc05a63ca011b106055f4521",
+    "s01_rear_end/view_b.jpg": "f375a3520af8ef306976fec25c5492523d63033c7ff6b2958fb178816d475db2",
+    "s01_rear_end/view_c.jpg": "413f9b14a778a09cddbaf6c3b2b7ce04eb7c5228a1534611de91d6c4129ff1c7",
+    "s02_left_cross/view_a.jpg": "b28272fca95707c7f76de94e03f3ff180350c483b70212071a971287fe7de4d4",
+    "s02_left_cross/view_b.jpg": "6a75cf0420b2cc6dcc0d88bf6f83491440bc2a92839bc66172f7b61ee9c3a0a2",
+    "s02_left_cross/view_c.jpg": "d4cf73d29935b13dd3e960c87f29f9118e395f0178cd93de3c88329f1785bf44",
+    "s03_parking_reverse/view_a.jpg": "880e811ed135dfca32f5daefb2796de2c67a13245504e3953d197d06894f5c28",
+    "s03_parking_reverse/view_b.jpg": "eb21fbc114c2bbc2048ef0c68d634d5a30078b87f35c5bbb2733908e373cc886",
+    "s03_parking_reverse/view_c.jpg": "a9fd9388e91eea9b227df522d07e3cd83dd0a73af2b02e4b8e0963a00592b9a1",
+    "s04_roundabout_sideswipe/view_a.jpg": "7d08396fd83c7de7e85f5c87a97b72fbf465ff7b17521b5c4650c48c33704179",
+    "s04_roundabout_sideswipe/view_b.jpg": "409480aa496d0e97eccb9bb002d9e809b55c94c5161c7c59068dd3bf311cfd8c",
+    "s04_roundabout_sideswipe/view_c.jpg": "f83cf423ada074b28073fe823286383c89f8ac0041772bcc4897cec80f77332f",
+    "s05_t_intersection/view_a.jpg": "cb96fd073d47ca39ac5800ba1ea0b00072a7e50ca9971010dc67b672a3a67c83",
+    "s05_t_intersection/view_b.jpg": "09d5a0bef74848d89e91a73489f99fa288112f716ce959a5b4c533d9eef6391a",
+    "s05_t_intersection/view_c.jpg": "c4625a16274861a17285dc80d797ee6e82107b8e683f620d87e60acbe93a5df2",
+    "s06_lane_change/view_a.jpg": "bb79407e1202196c4b50c1f97aab4c54e03b6e7da2519ffe6257861de1314582",
+    "s06_lane_change/view_b.jpg": "cc9cbb25f1dca2351fa079a633524d912fe07c71077f36b147624e7ff8f45409",
+    "s06_lane_change/view_c.jpg": "65c8ee7640231cbc7f01e9fe4dd431c9bfb18d5bbfddbeae89f821a3e38d1162",
+    "s07_intersection_truck/view_a.jpg": "c711bb695abb46a49eca66b9e8524a98284a2703d72b75244c3dbb7a24ff5cee",
+    "s07_intersection_truck/view_b.jpg": "92286269d70b0297e436b8ffca30c8b2e489b4f4c5deb55dbd2f762fe181be30",
+    "s07_intersection_truck/view_c.jpg": "9a4619f4c1bf6e2a6d3fa10affcf489dfc252a6a40ebaf2406af42f2227d1a2d"
+  },
+  "description": "External reproducibility anchor: SHA-256 of every committed eval/scenarios input asset (synthetic photos + the truth-bearing manifest.json). CI asserts the live-computed digests still match, proving the eval inputs and the hashing stay reproducible outside the sealed case artifacts. Regenerate with scripts/gen_golden_digests.py.",
+  "generated_at": "2026-07-24T08:31:38.955699+00:00",
+  "schema": "claimscene/golden-digests/v1"
+}
