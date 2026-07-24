@@ -18,6 +18,13 @@ node_modules/
 .vite/
 frontend/coverage/
 
+# Playwright (end-to-end journey / a11y / responsive) — regenerated each run
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+frontend/.lighthouseci/
+frontend/lhci-report/
+
 # Env / secrets — NEVER commit real credentials
 .env
 .env.*

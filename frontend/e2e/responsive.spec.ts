@@ -1,0 +1,123 @@
+import { test, expect, type Locator, type Page } from "@playwright/test";
+import { installApiMocks } from "./_mocks";
+
+/**
+ * Responsive + tap-target + focus-visibility gate.
+ *
+ *  - No horizontal overflow at 375 / 768 / 1280 on the landing page and through
+ *    the wizard.
+ *  - Primary controls are ≥44×44px on mobile (WCAG 2.5.5), and every other
+ *    interactive control clears the 24px AA floor (WCAG 2.5.8). The dense
+ *    review micro-controls (12-position clock, per-field dropdowns) are 24px by
+ *    construction and are covered by the AA floor, not the 44px primary check.
+ *  - Both hero CTAs show a visible focus ring under keyboard focus.
+ */
+
+const WIDTHS = [375, 768, 1280] as const;
+
+async function assertNoHorizontalOverflow(page: Page, label: string) {
+  const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    innerWidth: window.innerWidth,
+  }));
+  // A 1px allowance absorbs sub-pixel rounding of the fixed-grid background.
+  expect(scrollWidth, `${label}: page must not scroll horizontally`).toBeLessThanOrEqual(innerWidth + 1);
+}
+
+test.beforeEach(async ({ page }) => {
+  await installApiMocks(page);
+});
+
+for (const width of WIDTHS) {
+  test(`no horizontal overflow at ${width}px (landing → source → review → sealed)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await assertNoHorizontalOverflow(page, `landing@${width}`);
+
+    await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+    await expect(page.getByRole("heading", { name: /Start a case/i })).toBeVisible();
+    await assertNoHorizontalOverflow(page, `source@${width}`);
+
+    await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
+    await page.getByRole("button", { name: /Extract scene/i }).click();
+    await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i })).toBeVisible();
+    await assertNoHorizontalOverflow(page, `review@${width}`);
+
+    await page.getByRole("button", { name: /Confirm .* render this case/i }).click();
+    await expect(page.getByRole("heading", { name: /Case sealed/i })).toBeVisible();
+    await assertNoHorizontalOverflow(page, `result@${width}`);
+  });
+}
+
+test("primary controls are >=44px tap targets on mobile (375)", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+
+  const atLeast44 = async (loc: Locator, name: string) => {
+    await expect(loc, `${name} present`).toBeVisible();
+    const box = await loc.boundingBox();
+    expect(box, `${name} has a box`).not.toBeNull();
+    expect(box!.height, `${name} height >=44 (got ${box!.height})`).toBeGreaterThanOrEqual(44);
+    expect(box!.width, `${name} width >=44 (got ${box!.width})`).toBeGreaterThanOrEqual(44);
+  };
+
+  await page.goto("/");
+  await atLeast44(page.getByRole("link", { name: /ClaimScene home/i }), "logo home link");
+  await atLeast44(page.getByRole("button", { name: /^Start a case/i }), "Start a case CTA");
+  await atLeast44(page.getByRole("button", { name: /Try a sample scenario/i }), "sample CTA");
+  await atLeast44(page.getByRole("link", { name: /github\.com\/upgradedev\/claimscene/i }), "footer repo link");
+
+  await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+  await atLeast44(page.getByRole("button", { name: /Browse files/i }), "Browse files");
+  await atLeast44(page.getByRole("button", { name: /Extract scene/i }), "Extract scene CTA");
+});
+
+test("secondary interactive controls clear the 24px AA floor on mobile (375)", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+  await expect(page.getByRole("heading", { name: /Start a case/i })).toBeVisible();
+
+  const controls = page.locator("a[href], button, select, [role=radio], [role=button]");
+  const n = await controls.count();
+  let checked = 0;
+  for (let i = 0; i < n; i++) {
+    const c = controls.nth(i);
+    if (!(await c.isVisible())) continue;
+    const box = await c.boundingBox();
+    if (!box) continue;
+    // Skip sr-only / offscreen-until-focused elements (e.g. the skip link),
+    // which collapse to a 1px box until they receive focus.
+    if (box.height <= 1.5 || box.width <= 1.5) continue;
+    checked += 1;
+    expect(box.height, `control #${i} height >=24`).toBeGreaterThanOrEqual(23.5);
+    expect(box.width, `control #${i} width >=24`).toBeGreaterThanOrEqual(23.5);
+  }
+  expect(checked, "audited at least a handful of controls").toBeGreaterThan(3);
+});
+
+test("both hero CTAs show a visible focus ring under keyboard focus", async ({ page }) => {
+  const ringVisible = async (loc: Locator, name: string) => {
+    // Tab from the top so Chromium's :focus-visible heuristic engages (a
+    // programmatic .focus() would not trigger it).
+    await page.goto("/");
+    let focused = false;
+    for (let i = 0; i < 16 && !focused; i++) {
+      await page.keyboard.press("Tab");
+      focused = await loc.evaluate((el) => el === document.activeElement).catch(() => false);
+    }
+    expect(focused, `${name} reachable by keyboard`).toBeTruthy();
+    const s = await loc.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { boxShadow: cs.boxShadow, outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth };
+    });
+    const visible =
+      (s.boxShadow !== "none" && s.boxShadow !== "") ||
+      (s.outlineStyle !== "none" && s.outlineWidth !== "0px");
+    expect(visible, `${name} focus ring visible (got ${JSON.stringify(s)})`).toBeTruthy();
+  };
+
+  await ringVisible(page.getByRole("button", { name: /^Start a case/i }), "Start a case");
+  await ringVisible(page.getByRole("button", { name: /Try a sample scenario/i }), "Try a sample scenario");
+});
