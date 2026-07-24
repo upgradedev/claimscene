@@ -75,7 +75,8 @@ The honest lesson came from the live path. Our contract tests run against the re
 - Provenance that covers inputs, not just outputs: the manifest says where every photo came from and under what license.
 - A measured accuracy number (100% on the committed set) instead of a vibe.
 - A human-in-the-loop review step that is the trust story and the production-readiness story at once.
-- 181 backend tests plus 42 frontend tests, gitleaks, CodeQL and a machine-checkable readiness gate, all runnable with zero credentials.
+- A sealed AI→human approval receipt: the render seals the exact proposed→confirmed scene diff with a recomputable `decision_digest` that self-voids if the confirmed scene drifts, and the whole case re-verifies from stored bytes through a named-check receipt (`GET /cases/{id}/verify`) plus a detached, self-sealed receipt written as its own B2 object.
+- 289 backend tests plus 126 frontend tests, gitleaks, CodeQL and a machine-checkable readiness gate, all runnable with zero credentials.
 
 ### What we learned
 Constrain the model to a vocabulary and let deterministic code do the geometry. Label the generative layer loudly. And make honesty a data structure: a sealed manifest that records sources and disclosure by construction, not a promise in the footer.
@@ -91,10 +92,17 @@ First-notice-of-loss integrations, multi-incident case files, a reviewer audit t
 
 ## Owner checklist (not done here)
 1. Upload demo video to YouTube (public, < 3 min), paste URL into Project details + this file.
-2. Provision a B2 bucket `claimscene` + write-scoped key so the live app renders real Genblaze output to B2 (today it degrades honestly to in-memory storage).
-3. Upload gallery images.
-4. Accept T&C + Submit project on Devpost before Aug 3, 5:00pm EDT (edits allowed after submit until the deadline).
-5. Keep the app reachable through Aug 11, 5:00pm EDT (judging).
+2. Upload gallery images.
+3. Accept T&C + Submit project on Devpost before Aug 3, 5:00pm EDT (edits allowed after submit until the deadline).
+4. Keep the app reachable through Aug 11, 5:00pm EDT (judging).
+
+Already done (verified 2026-07-23): the `claimscene` B2 bucket and a
+write-entitled, scoped application key are provisioned, and the live app is
+deployed on Cloud Run rendering real Genblaze output straight to B2
+(`storage=B2Storage`) — a live case wrote a real seedream still and pixverse
+clip to the bucket. (If the entitled key is ever absent, live mode degrades
+storage to the in-memory object store rather than failing — a documented
+fallback, not the current state.)
 
 ## Relationship to our other entry
 ClaimScene shares an in-house Backblaze B2 storage and provenance-sealing foundation with our other submission, Cinemory (cinematic memory reels). The two are different products: different domain, different data model, different extraction and layout pipeline, and a different UI. This is disclosed here and in the README.
