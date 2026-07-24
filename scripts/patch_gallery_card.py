@@ -56,7 +56,7 @@ import argparse
 import json
 import os
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from PIL import Image, ImageDraw, ImageFont
 
