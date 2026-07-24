@@ -117,17 +117,34 @@ def apply_patch_spec(spec: dict, spec_path: str) -> str:
     draw = ImageDraw.Draw(img)
 
     for patch in spec["patches"]:
-        draw.rectangle(tuple(patch["erase_box"]), fill=fill_color)
-
         target_h = patch["ink_bottom_y"] - patch["ink_top_y"]
         size = find_font_size(draw, patch["new_text"], font_path, target_h)
         font = ImageFont.truetype(font_path, size)
         bbox = draw.textbbox((0, 0), patch["new_text"], font=font)
         draw_x = patch["anchor_left_x"] - bbox[0]
         draw_y = patch["ink_top_y"] - bbox[1]
+
+        # Erase the UNION of the spec's erase_box and the new text's actual
+        # rendered extent (+pad), not just the declared erase_box. A
+        # hand-measured erase_box is sized for the *old* text; if the new
+        # text is wider (e.g. "42" -> "126"), drawing straight over it would
+        # blend the new glyph's anti-aliased edge with whatever pixels were
+        # already there instead of a flat fill. That makes re-running this
+        # script on an already-patched image a visible (if subtle) second
+        # blend rather than a true no-op -- this union keeps the operation
+        # idempotent regardless of how tightly erase_box was measured.
+        pad = 4
+        text_box = (draw_x + bbox[0] - pad, draw_y + bbox[1] - pad,
+                    draw_x + bbox[2] + pad, draw_y + bbox[3] + pad)
+        erase_box = patch["erase_box"]
+        full_erase = (
+            min(erase_box[0], text_box[0]), min(erase_box[1], text_box[1]),
+            max(erase_box[2], text_box[2]), max(erase_box[3], text_box[3]),
+        )
+        draw.rectangle(full_erase, fill=fill_color)
         draw.text((draw_x, draw_y), patch["new_text"], font=font, fill=text_color)
         print(f"  [{os.path.basename(spec_path)}] drew {patch['new_text']!r} "
-              f"at ({draw_x},{draw_y}) font_size={size}")
+              f"at ({draw_x},{draw_y}) font_size={size} erased={full_erase}")
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     img.save(out_path)
