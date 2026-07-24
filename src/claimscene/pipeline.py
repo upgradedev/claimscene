@@ -16,11 +16,13 @@ from .layout import LayoutEngine, Timeline, timeline_to_json
 from .ports import MediaProvider, Renderer, StorageBackend, VisionExtractor
 from .provenance import (
     WATERMARK,
+    build_detached_receipt,
     build_manifest,
     build_review,
     canonical_json,
     input_record,
     sha256_bytes,
+    verify_all,
 )
 from .report import build_report, illustration_prompt, illustration_still_prompt
 from .scene import SceneGraph, scene_to_json, semantic_warnings
@@ -48,6 +50,9 @@ class CaseResult:
     degraded: bool
     artifacts: dict[str, ArtifactRef] = field(default_factory=dict)
     payloads: dict[str, bytes] = field(default_factory=dict)
+    # The detached, independently re-verifiable receipt (also its own stored
+    # object under the ``receipt`` kind); ``None`` until the case is sealed.
+    receipt: dict | None = None
 
 
 _KIND_BY_ARTIFACT = {
@@ -60,6 +65,7 @@ _KIND_BY_ARTIFACT = {
     "illustration": "illustration",
     "report": "report",
     "manifest": "manifest",
+    "receipt": "receipt",
 }
 
 
@@ -235,4 +241,17 @@ class CasePipeline:
         manifest_bytes = canonical_json(manifest)
         self._store(result, "manifest", "manifest", "manifest.json",
                     manifest_bytes, "application/json")
+
+        # 9. Detached, independently re-verifiable receipt — persisted as its
+        #    OWN small object next to the case artifacts (content-addressed,
+        #    indexed). ``verify_all`` re-runs every named check from the bytes
+        #    just written (via ``result.payloads``), then the receipt distils
+        #    that outcome + the illustration output digest + the review decision
+        #    digest into a self-sealed attestation. Offline-safe and never 500s:
+        #    the fetcher is a plain dict read and each check is fail-closed.
+        verification = verify_all(manifest, lambda name: result.payloads.get(name))
+        detached = build_detached_receipt(manifest, verification)
+        result.receipt = detached
+        self._store(result, "receipt", "receipt", "receipt.json",
+                    canonical_json(detached), "application/json")
         return result

@@ -135,6 +135,8 @@ field → `422`), and the schematic's dynamic text is XML-escaped at the source.
 | `POST /cases/preview-schematic` | a SceneGraph → a fast static schematic (live review) |
 | `POST /cases/render` | a reviewed SceneGraph → a sealed case |
 | `GET /cases/{id}` | the sealed manifest (raw canonical bytes, for in-browser verify) |
+| `GET /cases/{id}/verify` | server-side re-verification from stored bytes (named-check receipt) |
+| `GET /cases/{id}/receipt` | the detached, self-sealed receipt (raw canonical bytes) |
 | `GET /cases/{id}/schematic` | factual-layer playback (MP4 live / PNG offline) |
 | `GET /cases/{id}/illustration` | illustration playback (302 → fresh presigned URL live / stream offline) |
 
@@ -212,12 +214,22 @@ python scripts/readiness.py --min 0
 
 Every artifact is stored under a content-addressed key
 `<case>/<kind>/<shard>/<sha256>/<name>` (kinds: `inputs`, `scene`,
-`timeline`, `schematic`, `illustration`, `report`, `manifest`). The adapter
-maintains a durable `index.jsonl` catalogue in the bucket itself, so a fresh
-worker can resolve every case another instance sealed. Case ids and
+`timeline`, `schematic`, `illustration`, `report`, `manifest`, `receipt`). The
+adapter maintains a durable `index.jsonl` catalogue in the bucket itself, so a
+fresh worker can resolve every case another instance sealed. Case ids and
 filenames are sanitised before they touch a key; the SHA-256 anchor is
 always machine-derived, so identity stays content-addressed even for
 hostile input.
+
+Alongside the manifest, each sealed case also writes a small **detached
+receipt** (`receipt` kind) — its own object, `GET /cases/{id}/receipt`. It
+distils the manifest hash, the Genblaze illustration output digest, and the
+review decision digest into a self-sealed attestation whose own
+`receipt_digest` recomputes, so a downstream reader can re-verify the case
+(and bind those two cited digests back to the manifest) without re-fetching
+every byte. *Honesty caveat:* the append-only `index.jsonl` proves an artifact
+was **recorded**, not that it is **immutable** — pair the bucket with B2
+Object Lock / object-versioning for true write-once tamper-evidence.
 
 Environment contract (canonical Backblaze names primary, legacy aliases
 accepted): `B2_BUCKET_NAME`, `B2_S3_ENDPOINT`, `B2_APPLICATION_KEY_ID`,

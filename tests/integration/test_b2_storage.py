@@ -10,6 +10,7 @@ from claimscene.adapters.b2_storage import (
     build_b2_client,
     region_from_endpoint,
 )
+from claimscene.provenance import verify_detached_receipt
 
 
 @pytest.fixture
@@ -47,6 +48,35 @@ def test_get_round_trips_bytes(b2_env, fake_s3):
     storage = B2Storage(client=fake_s3)
     storage.put("k/a/b/c/x.bin", b"\x00\x01\x02")
     assert storage.get("k/a/b/c/x.bin") == b"\x00\x01\x02"
+
+
+def test_detached_receipt_persisted_as_its_own_b2_object(b2_env, fake_s3):
+    """A full case sealed onto the real B2 adapter writes the detached receipt
+    as its own content-addressed object AND records it in the durable index, so
+    a fresh worker resolves it and re-verifies it against the sealed manifest."""
+    from claimscene.adapters.fakes import FakeMediaProvider, FakeVisionExtractor
+    from claimscene.case import CasePhoto, CaseSpec, PhotoSource
+    from claimscene.pipeline import CasePipeline
+    from claimscene.schematic import PillowSchematicRenderer
+
+    storage = B2Storage(client=fake_s3)
+    result = CasePipeline(FakeVisionExtractor(), FakeMediaProvider(), storage,
+                          renderer=PillowSchematicRenderer(animate=False)).run(
+        CaseSpec(case_id="b2case", photos=[
+            CasePhoto(filename="p.png", data=b"\x89PNG-b2-scene",
+                      source=PhotoSource.staged_demo)]))
+
+    ref = result.artifacts["receipt"]
+    assert ref.key.split("/")[1] == "receipt" and ref.key.endswith("/receipt.json")
+    # A real object under the key prefix, mirrored in the durable index.jsonl.
+    assert ("claimscene-test", f"cs/{ref.key}") in fake_s3.store
+    assert ("claimscene-test", "cs/index.jsonl") in fake_s3.store
+
+    reader = B2Storage(client=fake_s3)  # a fresh, scale-to-zero worker
+    row = next((r for r in reader.index if r["key"] == ref.key), None)
+    assert row is not None and row["content_type"] == "application/json"
+    receipt = json.loads(reader.get(ref.key))
+    assert verify_detached_receipt(receipt, result.manifest) is True
 
 
 def test_reload_index_survives_missing_index(b2_env, fake_s3):

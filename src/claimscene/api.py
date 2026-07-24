@@ -21,6 +21,8 @@ POST /cases/extract                   photos|scenario → constrained SceneGraph
 POST /cases/preview-schematic         SceneGraph → static schematic (live review)
 POST /cases/render                    reviewed SceneGraph → sealed case
 GET  /cases/{id}                      the sealed manifest (raw, for in-browser verify)
+GET  /cases/{id}/verify               server-side re-verification (named-check receipt)
+GET  /cases/{id}/receipt              the detached, self-sealed receipt (raw bytes)
 GET  /cases/{id}/schematic            factual-layer playback (mp4 live / png offline)
 GET  /cases/{id}/illustration         illustration playback (302 presign live / stream)
 
@@ -545,6 +547,23 @@ def verify_case(case_id: str) -> dict:
     except Exception:  # unreadable bytes → a fully-shaped failing receipt, not a 500
         manifest = {}
     return verify_all(manifest, _artifact_fetcher(case_id)).to_dict()
+
+
+@app.get("/cases/{case_id}/receipt")
+def get_case_receipt(case_id: str) -> Response:
+    """The detached, self-sealed verification receipt as the RAW canonical bytes.
+
+    Stored as its own small object alongside the case artifacts when the case
+    seals (see :func:`~claimscene.provenance.build_detached_receipt`). Serving
+    the raw bytes lets a client recompute ``receipt_digest`` exactly and bind
+    the cited illustration/review digests back to the manifest — an
+    independently re-verifiable attestation, not a live recomputation. A case
+    that has no stored receipt is a 404.
+    """
+    match = _case_index_match(case_id, kind="receipt", suffix="/receipt.json")
+    if not match:
+        raise HTTPException(404, f"no receipt for case {case_id!r}")
+    return Response(content=_storage.get(match["key"]), media_type="application/json")
 
 
 @app.get("/cases/{case_id}/schematic")

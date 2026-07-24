@@ -18,6 +18,11 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import claimscene.api as api  # noqa: E402
 from claimscene.evaluation import diff_scenes  # noqa: E402
+from claimscene.provenance import (  # noqa: E402
+    canonical_json,
+    sha256_bytes,
+    verify_detached_receipt,
+)
 from claimscene.scene import scene_from_json  # noqa: E402
 
 client = TestClient(api.app)
@@ -177,3 +182,53 @@ def test_render_still_verifiable_end_to_end_after_all_the_above():
 
     body = _render(_proposed(), scenario_id="s02_left_cross")
     assert verify_manifest(_manifest(body)) is True
+
+
+# ── GET /cases/{id}/receipt — the detached, self-sealed receipt ───────────────
+def test_render_persists_a_detached_receipt_object_in_the_index():
+    proposed = _proposed()
+    body = _render(proposed, proposed_scene=json.dumps(proposed),
+                   scenario_id="s02_left_cross")
+    case_id = body["case_id"]
+    # Stored as its own content-addressed object under the receipt kind.
+    keys = [r["key"] for r in api._storage.index
+            if case_id in r["key"] and r["key"].endswith("/receipt.json")]
+    assert len(keys) == 1
+    assert keys[0].split("/")[1] == "receipt"
+
+
+def test_receipt_endpoint_returns_raw_reverifiable_bytes():
+    proposed = _proposed()
+    body = _render(proposed, proposed_scene=json.dumps(proposed),
+                   reviewer_id="sam", scenario_id="s02_left_cross")
+    case_id = body["case_id"]
+    res = client.get(f"/cases/{case_id}/receipt")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/json")
+    receipt = res.json()
+    # Raw canonical bytes: the digest recomputes over exactly what was served.
+    served_body = {k: v for k, v in receipt.items() if k != "receipt_digest"}
+    assert sha256_bytes(canonical_json(served_body)) == receipt["receipt_digest"]
+    # Independently re-verifiable, and bound to this case's sealed manifest.
+    manifest = _manifest(body)
+    assert verify_detached_receipt(receipt) is True
+    assert verify_detached_receipt(receipt, manifest) is True
+    # It cites the two derived digests it promises to.
+    assert receipt["illustration"]["output_digest"] == manifest["illustration"]["sha256"]
+    assert receipt["review"]["decision_digest"] == manifest["review"]["decision_digest"]
+    assert receipt["verify_summary"]["success"] is True
+
+
+def test_receipt_bytes_drift_is_independently_detected():
+    """A rewritten stored receipt object no longer re-verifies — the detached
+    attestation catches tampering on its own, without the manifest."""
+    body = _render(_proposed(), scenario_id="s02_left_cross")
+    case_id = body["case_id"]
+    receipt = client.get(f"/cases/{case_id}/receipt").json()
+    assert verify_detached_receipt(receipt) is True
+    receipt["illustration"]["output_digest"] = "0" * 64  # forge the cited output
+    assert verify_detached_receipt(receipt) is False
+
+
+def test_receipt_unknown_case_is_404():
+    assert client.get("/cases/does-not-exist/receipt").status_code == 404
