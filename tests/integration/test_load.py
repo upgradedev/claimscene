@@ -28,8 +28,9 @@ _MAX_WORKERS = 5
 #: local average, so a slower CI runner under contention still clears it.
 _LATENCY_BOUND_S = 3.0
 #: input + scene + timeline + schematic_svg + schematic_hero + illustration_still
-#: + illustration + report + manifest (animate=False → no schematic_animation).
-_EXPECTED_ARTIFACTS = 9
+#: + illustration + report + manifest + receipt (animate=False → no
+#: schematic_animation).
+_EXPECTED_ARTIFACTS = 10
 
 
 def run_single_pipeline(worker_id: int) -> tuple[float, str, int]:

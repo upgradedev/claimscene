@@ -26,6 +26,7 @@ from .scene import SCENE_SCHEMA
 
 MANIFEST_SCHEMA = "claimscene/manifest/v1"
 REVIEW_SCHEMA = "claimscene/review/v1"
+RECEIPT_SCHEMA = "claimscene/receipt/v1"
 DISCLOSURE = "AI-generated illustration — not evidence"
 WATERMARK = "ILLUSTRATION — NOT EVIDENCE"
 
@@ -365,3 +366,89 @@ def verify_all(
     success = all(c["passed"] for c in checks)
     digest = sha256_bytes(canonical_json({"checks": checks, "success": success}))
     return VerificationReceipt(checks=checks, success=success, digest=digest)
+
+
+# ── detached, independently re-verifiable receipt (its own B2 object) ──────────
+def build_detached_receipt(
+    manifest: dict,
+    receipt: VerificationReceipt,
+    *,
+    created_at: str | None = None,
+) -> dict:
+    """A compact, self-sealed receipt persisted as its OWN small object.
+
+    Distilled from the sealed ``manifest`` + a :class:`VerificationReceipt`
+    (the aggregate named-check outcome), it is a durable, portable attestation
+    that lives *next to* the case artifacts rather than inside the manifest —
+    so it can be indexed, fetched and re-verified on its own. It cites, by
+    hash, exactly the two derived digests a downstream reader most wants to
+    trust without re-fetching every byte:
+
+      * the **Genblaze illustration output digest** (``illustration.sha256``);
+      * the **review decision digest** (the sealed approval receipt's digest).
+
+    Plus the ``manifest_hash`` it was distilled from and a one-line
+    ``verify_summary`` (was the whole case green when sealed, and over how many
+    checks). ``receipt_digest`` seals the body with the same canonical SHA-256
+    as every other artifact, so the receipt is tamper-evident on its own and
+    :func:`verify_detached_receipt` recomputes it. It never raises — a manifest
+    missing a section degrades to ``None`` fields, not an exception.
+    """
+    illustration = manifest.get("illustration") or {}
+    review = manifest.get("review") or {}
+    body = {
+        "schema": RECEIPT_SCHEMA,
+        "case_id": manifest.get("case_id"),
+        "manifest_hash": manifest.get("manifest_hash"),
+        "disclosure": manifest.get("disclosure"),
+        "illustration": {
+            "provider": illustration.get("provider"),
+            "model": illustration.get("model"),
+            "degraded": illustration.get("degraded"),
+            # The generative output the receipt binds to (the Genblaze clip).
+            "output_digest": illustration.get("sha256"),
+        },
+        "review": {
+            "classification": review.get("classification"),
+            "decision_digest": review.get("decision_digest"),
+        },
+        "verify_summary": {
+            "success": receipt.success,
+            "check_count": len(receipt.checks),
+            "passed": sum(1 for c in receipt.checks if c.get("passed")),
+        },
+        "created_at": created_at or utc_now_iso(),
+    }
+    body["receipt_digest"] = sha256_bytes(canonical_json(body))
+    return body
+
+
+def verify_detached_receipt(receipt: dict, manifest: dict | None = None) -> bool:
+    """Re-verify a detached receipt from its own bytes (fail-closed).
+
+    Always recomputes ``receipt_digest`` over the sealed body — any mutation of
+    a cited digest, the verify summary, or any field flips it to ``False``. When
+    the source ``manifest`` is supplied the citations are additionally bound to
+    it: the ``manifest_hash``, the illustration ``output_digest`` and the review
+    ``decision_digest`` must each still match the manifest, so a receipt lifted
+    onto a different (or drifted) case is rejected too.
+    """
+    if not isinstance(receipt, dict):
+        return False
+    claimed = receipt.get("receipt_digest")
+    if not claimed:
+        return False
+    body = {k: v for k, v in receipt.items() if k != "receipt_digest"}
+    if sha256_bytes(canonical_json(body)) != claimed:
+        return False
+    if manifest is None:
+        return True
+    illustration = manifest.get("illustration") or {}
+    review = manifest.get("review") or {}
+    receipt_ill = receipt.get("illustration") or {}
+    receipt_rev = receipt.get("review") or {}
+    return (
+        receipt.get("manifest_hash") == manifest.get("manifest_hash")
+        and receipt_ill.get("output_digest") == illustration.get("sha256")
+        and receipt_rev.get("decision_digest") == review.get("decision_digest")
+    )

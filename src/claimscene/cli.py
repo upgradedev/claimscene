@@ -34,6 +34,7 @@ _OUT_FILES = {
     "illustration": "illustration.mp4",
     "report": "report.md",
     "manifest": "manifest.json",
+    "receipt": "receipt.json",
 }
 
 

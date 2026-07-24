@@ -66,8 +66,9 @@ def test_index_lists_every_artifact(run):
     index_keys = {row["key"] for row in storage.index}
     for ref in result.artifacts.values():
         assert ref.key in index_keys
-    # 3 inputs + 8 artifacts (no animation with animate=False)
-    assert len(index_keys) == 11
+    # 3 inputs + 9 artifacts (scene, timeline, schematic svg+hero, illustration
+    # still+clip, report, manifest, detached receipt; no animation offline).
+    assert len(index_keys) == 12
 
 
 def test_illustration_layer_sealed_with_still_and_clip(run):
