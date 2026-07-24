@@ -30,7 +30,7 @@ describe("App shell", () => {
 
   it("renders the landing hero (with banner + footer) by default", () => {
     renderApp();
-    expect(screen.getByRole("note")).toBeInTheDocument(); // DisclosureBanner
+    expect(screen.getByRole("region", { name: /AI-content disclosure/i })).toBeInTheDocument(); // DisclosureBanner
     expect(screen.getByRole("heading", { name: /One sealed truth/i })).toBeInTheDocument();
     expect(screen.getByRole("contentinfo")).toBeInTheDocument(); // Footer
     expect(screen.queryByText(/Step 1 of 4/i)).not.toBeInTheDocument();

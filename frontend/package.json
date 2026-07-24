@@ -13,7 +13,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "e2e:install": "playwright install --with-deps chromium"
+    "e2e:install": "playwright install --with-deps chromium",
+    "lhci": "lhci autorun"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
+    "@lhci/cli": "^0.15.1",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^16.0.0",

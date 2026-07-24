@@ -6,7 +6,8 @@ import { AlertTriangle } from "lucide-react";
 export function DisclosureBanner() {
   return (
     <div
-      role="note"
+      role="region"
+      aria-label="AI-content disclosure"
       // OPAQUE warm-dark bar (not a 7%-alpha tint): the ethics line is the
       // product's spine, so it must render deterministically — a translucent
       // background over the page's grid image left its contrast unresolvable by
