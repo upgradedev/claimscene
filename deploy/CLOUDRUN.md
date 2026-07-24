@@ -74,14 +74,19 @@ encodes in both modes.
 > The script **rebuilds the image from local source**. Run `git pull` on `main`
 > before the cutover so the rebuilt image carries the latest code.
 
-### ⚠️ User-gated: the `claimscene` B2 bucket
+### Done: the `claimscene` B2 bucket (provisioned + live)
 
-Create a Backblaze B2 bucket named `claimscene` and an application key **scoped
-to it** with `writeFiles` / `readFiles` (the presign path needs SigV4 + the
-correct region — both are wired in `b2_storage.py`). Until that entitled key
-exists, live mode transparently degrades storage to the offline object store
-(health still reports `mode=live`, `storage=InMemoryStorage`) — so a live
-deploy never 500s, it just isn't persisting to B2 yet.
+The Backblaze B2 bucket `claimscene` and an application key **scoped to it**
+with `writeFiles` / `readFiles` are provisioned (the presign path needs SigV4 +
+the correct region — both are wired in `b2_storage.py`). The live deploy runs
+against them: verified 2026-07-23, health reports `mode=live`,
+`storage=B2Storage`, and a live case wrote real objects — a seedream
+establishing still and a pixverse illustration clip — to the bucket.
+
+Fallback behaviour (documented, not the current state): if the entitled key is
+ever absent, live mode transparently degrades storage to the offline object
+store (health then reports `storage=InMemoryStorage`) — so a live deploy never
+500s, it simply would not persist to B2.
 
 ## Optional: Firebase Hosting mirror
 

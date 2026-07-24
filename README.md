@@ -114,6 +114,10 @@ The user journey is four steps, and the middle one is the whole point:
    until you render.
 3. **Render.** The full pipeline runs: animated schematic (factual layer) +
    disclosed illustration + report + a canonical-SHA-256 manifest, all stored.
+   The seal also captures a **sealed AI→human approval receipt** — the exact
+   proposed→confirmed scene diff and a `decision_digest` that self-voids if the
+   confirmed scene ever drifts from what you approved (a demo click is honestly
+   classified `interactive_demo`, never an authenticated approval).
 4. **Sealed case.** The animated schematic plays beside the illustration clip
    (with a persistent *"AI ILLUSTRATION — NOT EVIDENCE"* overlay), next to the
    incident report, downloads, and a **provenance panel**: every input photo's
@@ -177,7 +181,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 pip install -e ".[server]"      # [server] adds the API (fastapi + multipart)
 
-pytest                          # 181 offline backend tests
+pytest                          # 289 offline backend tests
 python -m claimscene.cli --case demo --out out
 ```
 
@@ -308,7 +312,7 @@ desynced or over-length video fails the build.
 
 ## Testing & CI
 
-- **181 offline backend tests** (unit / integration / e2e): schema
+- **289 offline backend tests** (unit / integration / e2e): schema
   round-trips and rejection of hallucinated fields, layout determinism and
   contact-geometry properties, golden-file SVG, provenance seal/tamper, real
   B2 adapter against an S3 stub (**+ a presign contract test asserting SigV4 +
@@ -317,15 +321,19 @@ desynced or over-length video fails the build.
   SDK-boundary contract tests, and the **full API chain** through FastAPI's
   TestClient (extract → preview → render → get → verify → playback, honest
   degrade, path sanitisation, 422s).
-- **39 frontend tests** (Vitest): the review-panel edit logic, the
+- **126 frontend tests** (Vitest): the review-panel edit logic, the
   schematic-preview live-update wiring, the ReviewStep centrepiece render, the
-  playback-url selection, and the in-browser verify pinned to a **golden
-  manifest produced by the real backend** (whose sealed em-dash exercises
-  `ensure_ascii`).
+  **ExtractProgress** extract-latency UI, the playback-url selection, and the
+  in-browser verify pinned to a **golden manifest produced by the real backend**
+  (whose sealed em-dash exercises `ensure_ascii`).
 - CI (GitHub Actions): gitleaks v8.18.4 secret scan first, then in parallel —
   a Python job (ruff, pytest, pip-audit, **readiness gate GATING at `--min
-  95`** with a new *Web Application* criterion driving the API via TestClient),
-  and a **frontend job** (typecheck → Vitest → production build).
+  95`** with a *Web Application* criterion driving the API via TestClient),
+  a **frontend job** (typecheck → Vitest → production build), and a
+  **real-browser end-to-end job** (Playwright/Chromium) that drives the built
+  client through the whole source → review → render → sealed-case journey and
+  gates accessibility (zero serious/critical axe violations) and responsive
+  layout at 375/768/1280.
 - ffmpeg tests skip cleanly when ffmpeg is absent (the schematic playback route
   then serves the real hero PNG instead of MP4); `@pytest.mark.live` smokes run
   only when `GMI_API_KEY` is present (never in CI).
@@ -386,19 +394,25 @@ the committed eval set), the `GenblazeMediaProvider` behind `MediaProvider`
 `eval/evidence/`), and the readiness gate hardened to `--min 95`.
 
 Done in Phase 3: the **FastAPI API** (extract · preview-schematic · render ·
-get · playback), the **forensic-blueprint React web app** with the
+get · verify · playback), the **forensic-blueprint React web app** with the
 review-adjust centrepiece and in-browser provenance verification, the
-single-container **Dockerfile** + Cloud Run deploy assets, the **B2 presign
-fix** (SigV4 + region), and a **Web Application** readiness criterion.
+**sealed AI→human approval receipt** (a server-computed proposed→confirmed
+scene diff plus a recomputable `decision_digest` that self-voids if the
+confirmed scene later drifts), the **`verify_all` named-check receipt**
+(`GET /cases/{id}/verify`, re-running every seal/artifact/structural/review
+check from primary evidence) and its **detached self-sealed receipt** written
+as its own B2 object, the single-container **Dockerfile** + Cloud Run deploy
+assets, the **B2 presign fix** (SigV4 + region), and a **Web Application**
+readiness criterion.
 
-Remaining (user-gated):
+Done (live, verified 2026-07-23): the container is **deployed to Cloud Run** at
+a public URL, and the **`claimscene` B2 bucket** with a write-entitled, scoped
+application key is provisioned. A live case render ran end to end against it
+(`storage=B2Storage`), writing real objects — including a seedream establishing
+still and a pixverse illustration clip — to the bucket.
 
-1. **Live deploy** of the container to Cloud Run (`bash
-   deploy/deploy-cloudrun.sh`) and a public URL.
-2. A **`claimscene` B2 bucket** with a write-entitled, scoped application key
-   (the two remaining user-gated readiness items).
-3. Optional premium clip path (`Kling-Image2Video-V2.1-Master`) exposed in
-   the UI.
+Remaining (user-gated): the optional premium clip path
+(`Kling-Image2Video-V2.1-Master`) exposed in the UI.
 
 ## License
 
