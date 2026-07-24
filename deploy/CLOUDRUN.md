@@ -52,27 +52,54 @@ curl -s "$URL/scenarios" | head -c 200      # committed sample scenarios
 curl -s -o /dev/null -w '%{http_code}\n' "$URL/"   # 200 (React SPA index)
 ```
 
-## Deploy — LIVE cutover (gated)
+## Deploy — LIVE cutover (secrets via Secret Manager)
 
 The live path extracts scenes with the VLM ladder, renders real illustrations
-with Genblaze/GMI Cloud, and stores every artifact on Backblaze B2. It is a
-one-command redeploy with creds attached:
+with Genblaze/GMI Cloud, and stores every artifact on Backblaze B2. Secret
+values are **never** passed on the command line or written to the Cloud Run
+service spec — they live in **Google Secret Manager** and are staged once (and
+on every rotation) with `deploy/stage-secrets.sh`; the deploy then references
+them by name. That way `gcloud run services describe` — and anyone with only
+`run.services.get` IAM on the project — never sees a raw key.
+
+**Step 1 — stage the secrets** (the only step that handles raw values;
+`NEBIUS_INFERENCE_API_KEY` is optional — the VLM fallback rung):
+
+```bash
+B2_APPLICATION_KEY_ID='<b2 key id>' \
+B2_APPLICATION_KEY='<b2 app key>' \
+GMI_API_KEY='<gmi cloud key>' \
+  bash deploy/stage-secrets.sh
+```
+
+It creates/updates the secrets (`claimscene-b2-application-key-id`,
+`claimscene-b2-application-key`, `claimscene-gmi-api-key`, and
+`claimscene-nebius-inference-api-key` if you pass one). Prefer not to put keys in
+a shell? Create the same secrets in the Cloud Console (Secret Manager → Create
+secret) instead.
+
+**Step 2 — deploy** (no secret values here — only the non-secret live config):
 
 ```bash
 CLAIMSCENE_MODE=live \
-B2_APPLICATION_KEY_ID='<b2 key id>' \
-B2_APPLICATION_KEY='<b2 app key>' \
-B2_BUCKET_NAME='claimscene' \
+B2_BUCKET_NAME=claimscene \
 B2_S3_ENDPOINT='https://s3.<region>.backblazeb2.com' \
-GMI_API_KEY='<gmi cloud key>' \
   bash deploy/deploy-cloudrun.sh
 ```
 
-`ffmpeg` is already installed in the image, so the animated schematic MP4
-encodes in both modes.
+The deploy script grants the Cloud Run runtime service account
+`roles/secretmanager.secretAccessor` on each secret, wires them with
+`--set-secrets`, and fails fast with a pointer back to step 1 if one is missing.
+`ffmpeg` is already in the image, so the animated schematic MP4 encodes in both
+modes.
 
 > The script **rebuilds the image from local source**. Run `git pull` on `main`
 > before the cutover so the rebuilt image carries the latest code.
+
+**To rotate keys:** issue new keys in the GMI Cloud / Backblaze dashboards,
+re-run step 1 with the new values (adds a new secret version), re-run step 2,
+verify `/health`, then revoke the old keys. Cloud Run reads `:latest`, so the
+redeploy picks up the new version with no code change.
 
 ### Done: the `claimscene` B2 bucket (provisioned + live)
 
