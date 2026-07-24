@@ -12,6 +12,25 @@ describe("Hero", () => {
     expect(screen.getAllByText(/NOT EVIDENCE/i).length).toBeGreaterThanOrEqual(2);
   });
 
+  it("names the target audience", () => {
+    render(<Hero onStart={() => {}} />);
+    expect(screen.getByText(/insurers/i)).toBeInTheDocument();
+    expect(screen.getByText(/claims adjusters/i)).toBeInTheDocument();
+    expect(screen.getByText(/fleet-safety teams/i)).toBeInTheDocument();
+    expect(screen.getByText(/claimants/i)).toBeInTheDocument();
+  });
+
+  it("shows the two layers as a real example pair", () => {
+    render(<Hero onStart={() => {}} />);
+    // Section titles frame the pair + the trust group (clean h1 → h2 → h3).
+    expect(screen.getByRole("heading", { level: 2, name: /two layers, side by side/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: /why you can trust it/i })).toBeInTheDocument();
+    // The disclosed illustration is a real rendered frame (not a placeholder)…
+    expect(screen.getByRole("img", { name: /toy-diorama AI illustration/i })).toBeInTheDocument();
+    // …paired with the deterministic schematic image.
+    expect(screen.getByRole("img", { name: /top-down schematic/i })).toBeInTheDocument();
+  });
+
   it("both call-to-action buttons invoke onStart", () => {
     const onStart = vi.fn();
     render(<Hero onStart={onStart} />);

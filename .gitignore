@@ -57,6 +57,10 @@ readiness.json
 # .json and eval/evidence) — the only imagery this repo may carry.
 !eval/scenarios/**/*.jpg
 !eval/evidence/**/*.png
+# Curated frontend brand/example assets (synthetic only — no real photos).
+# hero-illustration.jpg is a downscaled crop of the sealed live-evidence
+# toy-diorama render (eval/evidence/live_illustration/illustration.png).
+!frontend/src/assets/*.jpg
 private/
 real-photos/
 eval/scenarios/_spend.json
