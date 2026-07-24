@@ -32,10 +32,15 @@ frontend/lhci-report/
 
 # Generated pipeline output
 out/
+# Demo-video build scratch (TTS clips, per-beat renders, concat lists).
+.artifacts/
 *.mp4
 # Committed evidence exceptions: the live-illustration proof clip is sealed
 # by hash in eval/evidence (verified by the readiness gate).
 !eval/evidence/**/*.mp4
+# The narrated demo walkthrough (ElevenLabs voiceover, built by
+# scripts/build_video.py) is a committed submission artifact.
+!demo/*.mp4
 
 # Readiness gate output (regenerated each run; archived as a CI artifact)
 readiness.json
@@ -57,6 +62,9 @@ readiness.json
 # .json and eval/evidence) — the only imagery this repo may carry.
 !eval/scenarios/**/*.jpg
 !eval/evidence/**/*.png
+# Demo-video source cards (synthetic forensic-blueprint marketing art — no
+# real photos/people/plates). Read by scripts/build_video.py.
+!demo/assets/*.png
 # Curated frontend brand/example assets (synthetic only — no real photos).
 # hero-illustration.jpg is a downscaled crop of the sealed live-evidence
 # toy-diorama render (eval/evidence/live_illustration/illustration.png).

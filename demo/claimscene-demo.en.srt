@@ -1,0 +1,70 @@
+1
+00:00:00,000 --> 00:00:14,700
+After a crash, the first real job is documentation. Which cars,
+which damage, which road, and what actually happened. ClaimScene
+turns accident photos into a case a claims handler can trust.
+Honest, illustrated, and never faked.
+
+2
+00:00:14,700 --> 00:00:31,133
+That matters now, because generative video made accident scenes
+easy to fake and hard to trust. A convincing AI reconstruction
+that is really just a guess is dangerous as evidence. Insurers
+and courts are already warning about synthetic media in claims.
+
+3
+00:00:31,133 --> 00:00:36,300
+So ClaimScene splits every case into two layers, and it never
+lets them blur.
+
+4
+00:00:36,300 --> 00:00:55,033
+The photos become a constrained scene the model cannot invent
+coordinates in. It may only fill a closed vocabulary of enums,
+clock positions, and speed bands. Deterministic code turns that
+into a top-down schematic, the factual layer, where the same
+input always produces the same bytes.
+
+5
+00:00:55,033 --> 00:01:08,867
+Beside it sits a clearly disclosed AI illustration, watermarked,
+and never merged with the facts. Both layers, and every input
+photo, are sealed on Backblaze B2 with each photo's source and
+license recorded.
+
+6
+00:01:08,867 --> 00:01:27,367
+The middle step is the whole point. The AI only proposes the
+scene. You review and adjust it with constrained dropdowns and a
+twelve-position clock, never free-text coordinates, and the
+schematic redraws live as you edit. AI proposes, you confirm.
+Nothing is sealed until you render.
+
+7
+00:01:27,367 --> 00:01:44,900
+Here is the difference. The sealed manifest proves what the AI
+proposed against what the human corrected, such as changing
+vehicle A's colour. Press Verify, and the SHA-256 seal
+recomputes right in your browser, backed by a receipt of
+fourteen named checks over the stored bytes.
+
+8
+00:01:44,900 --> 00:01:57,233
+And the accuracy is measured, not asserted. The primary model
+scores one hundred percent weighted field accuracy on a
+committed seven-scenario evaluation set, with a dated scoreboard
+living in the repo.
+
+9
+00:01:57,233 --> 00:02:15,833
+Under the hood: a Gemma and Gemini vision ladder, Genblaze for
+the seedream still and pixverse clip, Backblaze B2 storage, and
+Cloud Run. Live where credentials exist, deterministic fakes
+everywhere else, so the whole pipeline runs offline in
+continuous integration.
+
+10
+00:02:15,833 --> 00:02:25,200
+ClaimScene is live on Cloud Run, and the whole project is open
+source. Honest accident documentation. Illustrated, and never
+faked.
