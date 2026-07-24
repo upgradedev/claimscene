@@ -16,7 +16,12 @@ python, fastapi, react, typescript, genblaze, backblaze-b2, gmi-cloud, ffmpeg, g
 - GitHub repo: https://github.com/upgradedev/claimscene
 
 ## Video demo link
-TODO(owner): upload to YouTube (public, < 3 min, no copyrighted music), paste URL here + on the Devpost form.
+The narrated source video is committed at **`demo/claimscene-demo.mp4`** (2:25,
+1920x1080 H.264, ElevenLabs voiceover, burned captions + `demo/claimscene-demo.en.srt`).
+It is built from `demo/claimscene-demo.beats.json` by `scripts/build_video.py` and
+re-verified in CI by `scripts/check_video.py` (A/V-sync + caption-order gate).
+TODO(owner): upload `demo/claimscene-demo.mp4` to YouTube (public, < 3 min, no
+copyrighted music), then paste the URL here and on the Devpost form.
 
 ## About the project (Markdown story)
 

@@ -291,6 +291,21 @@ their generation prompts in `eval/scenarios/manifest.json`. The
 belt-and-braces guard. Real deployments record real sources in the sealed
 manifest instead of pretending they do not exist.
 
+## Demo video
+
+A narrated walkthrough lives at **`demo/claimscene-demo.mp4`** (about 2:25,
+1920x1080 H.264, ElevenLabs voiceover with burned captions). It is assembled
+beat by beat from `demo/claimscene-demo.beats.json`: each beat's line is
+synthesized, the visual duration is locked to the measured audio, and a gentle
+Ken Burns move pans across the committed forensic-blueprint cards in
+`demo/assets/`. Rebuild it with `python scripts/build_video.py` (needs Pillow,
+an `ffmpeg` on PATH, and `ELEVENLABS_API_KEY`); the exact caption timings are
+written to `demo/claimscene-demo.en.srt`. CI runs `scripts/check_video.py`,
+which re-verifies the committed mp4 against the beat script: under three
+minutes, one video plus one audio stream, audio and video in sync to within a
+frame, H.264/1080p, and one subtitle cue per beat in the scripted order. A
+desynced or over-length video fails the build.
+
 ## Testing & CI
 
 - **181 offline backend tests** (unit / integration / e2e): schema

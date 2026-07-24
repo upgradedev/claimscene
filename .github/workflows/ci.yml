@@ -222,3 +222,26 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
+
+  # ── 9. Demo video: A/V-sync + caption-order gate over the committed mp4 ──────
+  #  Re-verifies the committed demo/claimscene-demo.mp4 against its beat script
+  #  and SRT sidecar so a desynced, malformed, over-length, or re-ordered demo
+  #  fails the build instead of shipping: duration < 3:00, exactly one video +
+  #  one audio stream, audio/video stream durations within ~one frame (desync
+  #  fails), H.264/yuv420p 1920x1080 at ~30 fps, one SRT cue per beat in order
+  #  matching each beat's narration, and the seven-part arc present in order.
+  #  Standard-library only (ffprobe on PATH) — no build, no credentials.
+  demo-video:
+    runs-on: ubuntu-latest
+    needs: secret-scan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ffmpeg (provides ffprobe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Verify the narrated demo video (A/V sync + caption order)
+        run: python scripts/check_video.py
