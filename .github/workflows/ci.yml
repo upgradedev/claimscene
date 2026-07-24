@@ -135,7 +135,42 @@ jobs:
       - name: Production build
         run: npm run build
 
-  # ── 6. CodeQL SAST (python + javascript/typescript) ─────────────────────────
+  # ── 6. End-to-end: real-browser journey + a11y + responsive (Playwright) ─────
+  #  Drives the BUILT client in headless Chromium with the API fully mocked
+  #  (frontend/e2e/_mocks.ts) — deterministic, no backend, no credentials. Gates
+  #  three things jsdom can't see: the full source→review→render→sealed-case
+  #  journey with every step actually reaching opacity:1 (the wizard-transition
+  #  regression), zero serious/critical axe violations on the landing page and
+  #  every step, and no horizontal overflow + ≥44px mobile tap targets at
+  #  375/768/1280.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: secret-scan
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Install Playwright browser (chromium)
+        run: npx playwright install --with-deps chromium
+      - name: Journey + a11y + responsive (Playwright, Chromium)
+        run: npx playwright test --project=chromium
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  # ── 7. CodeQL SAST (python + javascript/typescript) ─────────────────────────
   codeql:
     runs-on: ubuntu-latest
     needs: secret-scan
