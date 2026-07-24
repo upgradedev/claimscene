@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Select, toOptions } from "../ui/fields";
+import { ExtractProgress } from "../ExtractProgress";
 import { StepHeading } from "./StepHeading";
 
 const ROLE_OPTIONS = toOptions(["scene_photo", "damage_photo", "road_photo"], (r) =>
@@ -157,10 +158,17 @@ export function SourceStep() {
             <UploadCloud className="h-6 w-6" />
           </span>
           <p className="mt-3 text-sm text-blueprint-text">Drag &amp; drop photos, or</p>
-          <Button variant="secondary" size="sm" className="mt-2" onClick={() => inputRef.current?.click()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            // ≥44px tap target on mobile (WCAG 2.5.5); the compact 32px height
+            // is kept from the `sm` breakpoint up, where a pointer is likelier.
+            className="mt-2 h-11 px-4 sm:h-8 sm:px-3"
+            onClick={() => inputRef.current?.click()}
+          >
             <ImagePlus className="h-4 w-4" /> Browse files
           </Button>
-          <p className="mt-3 font-mono text-[11px] text-blueprint-dim">
+          <p className="mt-3 font-mono text-xs text-blueprint-dim">
             JPG / PNG / WebP · your photos never leave the request that seals your case
           </p>
           <input
@@ -234,6 +242,8 @@ export function SourceStep() {
         />
       </section>
 
+      {extract.isPending && <ExtractProgress isSample={!!scenario} />}
+
       {extract.isError && (
         <p role="alert" className="mt-4 flex items-center gap-2 rounded border border-red-400/30 bg-red-500/5 p-3 text-sm text-red-300">
           <AlertCircle className="h-4 w-4" /> {extract.error.message}
@@ -241,7 +251,7 @@ export function SourceStep() {
       )}
 
       <div className="mt-8 flex items-center justify-between gap-4">
-        <p className="max-w-sm font-mono text-[11px] text-blueprint-dim">
+        <p className="max-w-sm font-mono text-xs text-blueprint-dim">
           {scenario
             ? `Sample "${scenario.title}" — offline returns the shipped ground-truth scene; live runs the VLM ladder.`
             : "The extractor proposes a constrained scene graph. You review and adjust it next."}

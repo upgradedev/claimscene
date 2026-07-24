@@ -97,7 +97,9 @@ export function ReviewStep() {
         </span>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+      {/* grid-cols-1 at the base pins the single mobile column to minmax(0,1fr)
+          — without it the implicit column sizes to max-content and overflows. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         {/* ── editor ─────────────────────────────────────────────────── */}
         <div className="space-y-5">
           <section className="sheet p-4">

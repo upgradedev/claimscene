@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Stepper } from "./Stepper";
 import { SourceStep } from "./steps/SourceStep";
 import { ReviewStep } from "./steps/ReviewStep";
@@ -18,6 +18,7 @@ export function Studio() {
   const step = useCaseStore((s) => s.step);
   const result = useCaseStore((s) => s.result);
   const regionRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     regionRef.current?.focus();
@@ -30,25 +31,31 @@ export function Studio() {
         {STEP_LABEL[step]}
       </p>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={step}
-          ref={regionRef}
-          tabIndex={-1}
-          role="group"
-          aria-label={STEP_LABEL[step]}
-          className="outline-none"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {step === "source" && <SourceStep />}
-          {step === "review" && <ReviewStep />}
-          {step === "render" && <RenderStep />}
-          {step === "result" && (result ? <ResultStep result={result} /> : <SourceStep />)}
-        </motion.div>
-      </AnimatePresence>
+      {/* Robust step transitions. Each step is a fresh keyed node that animates
+          its OWN entrance to opacity:1 on mount — there is no exit to wait on,
+          so an incoming step can never stall at its initial opacity:0. This
+          replaces the previous <AnimatePresence mode="wait"> wrapper, whose
+          enter only started after the outgoing exit completed: when that exit
+          didn't finish, the next step stayed invisible and the wizard
+          dead-ended. `role=group`'s label stays in lock-step with the
+          `role=status` live region above (both read STEP_LABEL[step]).
+          prefers-reduced-motion snaps straight to the settled state. */}
+      <motion.div
+        key={step}
+        ref={regionRef}
+        tabIndex={-1}
+        role="group"
+        aria-label={STEP_LABEL[step]}
+        className="outline-none"
+        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {step === "source" && <SourceStep />}
+        {step === "review" && <ReviewStep />}
+        {step === "render" && <RenderStep />}
+        {step === "result" && (result ? <ResultStep result={result} /> : <SourceStep />)}
+      </motion.div>
     </section>
   );
 }

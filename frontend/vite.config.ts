@@ -39,6 +39,11 @@ export default defineConfig(({ mode }) => {
       environment: "jsdom",
       setupFiles: ["./src/test/setup.ts"],
       css: true,
+      // Vitest owns the jsdom unit/component suite under src/. The Playwright
+      // end-to-end specs live in e2e/ (real browser) and must never be picked
+      // up by Vitest's default `**/*.spec.ts` discovery.
+      include: ["src/**/*.test.{ts,tsx}"],
+      exclude: ["e2e/**", "node_modules/**", "dist/**"],
       coverage: {
         provider: "v8",
         // Count EVERY source file, not only the ones a test imports — so the

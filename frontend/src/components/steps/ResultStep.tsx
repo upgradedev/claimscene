@@ -35,8 +35,9 @@ export function ResultStep({ result }: { result: RenderResponse }) {
         </Button>
       </div>
 
-      {/* Media: factual schematic + disclosed illustration, side by side. */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Media: factual schematic + disclosed illustration, side by side.
+          grid-cols-1 base keeps the single mobile column container-bounded. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Factual layer */}
         <figure className="sheet overflow-hidden">
           <figcaption className="flex items-center justify-between border-b border-steel-700/70 px-3 py-1.5">

@@ -10,7 +10,9 @@ export function Footer() {
             href="https://github.com/upgradedev/claimscene"
             target="_blank"
             rel="noreferrer"
-            className="underline decoration-steel-600 underline-offset-2 transition-colors hover:text-blueprint-text"
+            // ≥44px tap target on mobile; collapses back to an inline link from
+            // `sm` up so the footer line reads normally on wider screens.
+            className="inline-flex min-h-11 items-center underline decoration-steel-600 underline-offset-2 transition-colors hover:text-blueprint-text sm:min-h-0"
           >
             github.com/upgradedev/claimscene
           </a>

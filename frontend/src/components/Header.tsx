@@ -16,7 +16,13 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-steel-700/70 bg-steel-950/80 backdrop-blur-md">
       <div className="container flex h-14 items-center justify-between">
-        <a href="/" className="rounded" aria-label="ClaimScene home">
+        {/* min-h-11 gives the home link a ≥44px tap target on mobile without
+            enlarging the 36px wordmark itself; reset from `sm` up. */}
+        <a
+          href="/"
+          className="inline-flex min-h-11 items-center rounded sm:min-h-0"
+          aria-label="ClaimScene home"
+        >
           <Wordmark />
         </a>
         <div className="flex items-center gap-2">
