@@ -8,7 +8,7 @@
   "patches": [
     {
       "note": "backend test count: 181 -> 289 (pytest summary, README.md:190)",
-      "erase_box": [85, 568, 148, 598],
+      "erase_box": [85, 568, 148, 596],
       "new_text": "289",
       "anchor_left_x": 92,
       "ink_top_y": 574,
@@ -16,7 +16,7 @@
     },
     {
       "note": "frontend test count: 42 -> 126 (vitest summary, README.md:364)",
-      "erase_box": [192, 568, 254, 598],
+      "erase_box": [192, 568, 254, 596],
       "new_text": "126",
       "anchor_left_x": 200,
       "ink_top_y": 574,
