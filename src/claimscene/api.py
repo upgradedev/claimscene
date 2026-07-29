@@ -20,6 +20,11 @@ GET  /scenarios/{id}/images/{name}    a scenario thumbnail (path-sanitised)
 POST /cases/extract                   photos|scenario → constrained SceneGraph
 POST /cases/preview-schematic         SceneGraph → static schematic (live review)
 POST /cases/render                    reviewed SceneGraph → sealed case
+POST /cases/render/jobs               submit a render as a background job (202 +
+                                       job_id) — does not block for the full
+                                       two-step generation
+GET  /cases/render/jobs/{job_id}      poll a submitted render job's status
+                                       (queued/running/done/failed)
 GET  /cases/{id}                      the sealed manifest (raw, for in-browser verify)
 GET  /cases/{id}/verify               server-side re-verification (named-check receipt)
 GET  /cases/{id}/receipt              the detached, self-sealed receipt (raw bytes)
@@ -31,24 +36,37 @@ deterministic fakes. In ``live`` mode the real backends are used only when
 their credentials are present, and a live-provider failure degrades *this
 request* to the offline provider (storage untouched) — the response says so
 honestly and the sealed manifest records the provider that actually ran.
+
+Async submit + poll (``POST /cases/render/jobs`` / ``GET
+/cases/render/jobs/{job_id}``): the synchronous ``POST /cases/render`` above
+runs a real two-step generation (an establish-shot still, then an
+image-to-video clip chained from it) that can take minutes — see
+``deploy/CLOUDRUN.md``'s ``--timeout 600`` note — longer than the Firebase
+Hosting proxy cap (~60s), so a caller that cannot hold one request open that
+long submits a job and polls it instead. The async route runs the exact same
+ingest validation and render path as the synchronous one (see
+``_run_render_job`` below and the ``claimscene.jobs`` module for the job-store
+design and its honest limitation — the worker runs in-process on the instance
+that accepted the submit).
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NamedTuple
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from pydantic import ValidationError
 
-from . import config, scenarios
-from .adapters import FakeMediaProvider, FakeVisionExtractor
+from . import config, jobs, scenarios
+from .adapters import FakeMediaProvider, FakeVisionExtractor, InMemoryStorage
 from .case import (
     CLIENT_REVIEW_CLASSIFICATIONS,
     CasePhoto,
@@ -61,6 +79,7 @@ from .ingest import MAX_PHOTO_BYTES, MAX_PHOTOS, UploadError, reject_dangerous_b
 from .keys import safe_component
 from .layout import LayoutEngine
 from .pipeline import CasePipeline, CaseResult
+from .ports import StorageBackend
 from .provenance import input_record, verify_all
 from .scene import SceneGraph, scene_to_json, semantic_warnings
 from .schematic import build_static_svg
@@ -317,7 +336,8 @@ def _case_body(result: CaseResult, *, degraded_request: bool) -> dict:
 def _run_render(scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
                 proposed: SceneGraph | None = None, reviewer_id: str | None = None,
                 classification: ReviewClassification = ReviewClassification.interactive_demo,
-                prior_notes: list[str] | None = None) -> dict:
+                prior_notes: list[str] | None = None,
+                storage: StorageBackend | None = None) -> dict:
     """Seal the reviewed scene; degrade THIS request honestly on live failure.
 
     On a live media-provider failure the same reviewed scene + inputs are
@@ -326,14 +346,21 @@ def _run_render(scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
     of the offline provider itself is a genuine bug and propagates. The sealed
     approval receipt (proposed→confirmed diff, reviewer, classification) rides
     on the ``CaseSpec`` so both the primary run and the degrade re-run seal it.
+
+    ``storage`` defaults to the module-level ``_storage``. The async job
+    worker (``_run_render_job``) passes its own isolated storage instead (see
+    ``_job_storage``), so a background thread never shares mutable adapter
+    state with a request thread — the honest-degrade fallback below then also
+    writes to THAT storage, not necessarily the module-level one.
     """
+    storage = storage if storage is not None else _storage
     spec = CaseSpec(case_id=case_id, photos=photos, proposed_scene=proposed,
                     reviewer_id=reviewer_id, review_classification=classification,
                     prior_confidence_notes=prior_notes or [])
     extractor = FixedSceneExtractor(scene)
     provider = config.build_provider()
     try:
-        result = CasePipeline(extractor, provider, _storage).run(spec)
+        result = CasePipeline(extractor, provider, storage).run(spec)
         return _case_body(result, degraded_request=False)
     except Exception as exc:
         if isinstance(provider, FakeMediaProvider):
@@ -343,7 +370,7 @@ def _run_render(scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
             "request with the offline provider (storage unchanged)",
             getattr(provider, "name", "?"), case_id,
         )
-        result = CasePipeline(extractor, FakeMediaProvider(), _storage).run(spec)
+        result = CasePipeline(extractor, FakeMediaProvider(), storage).run(spec)
         body = _case_body(result, degraded_request=True)
         body["degrade_reason"] = type(exc).__name__
         return body
@@ -457,36 +484,40 @@ def preview_schematic(scene: SceneGraph) -> dict:
     }
 
 
-@app.post("/cases/render")
-async def render_case(
-    scene: Annotated[str, Form()],
-    case_id: Annotated[str, Form()] = "case",
-    scenario_id: Annotated[str | None, Form()] = None,
-    roles: Annotated[str | None, Form()] = None,
-    proposed_scene: Annotated[str | None, Form()] = None,
-    reviewer_id: Annotated[str | None, Form()] = None,
-    review_classification: Annotated[str | None, Form()] = None,
-    files: Annotated[list[UploadFile] | None, File()] = None,
-) -> dict:
-    """Seal a human-reviewed SceneGraph into a full, verifiable case.
+class _RenderInputs(NamedTuple):
+    """Parsed + validated render inputs — shared by the sync (``POST
+    /cases/render``) and async (``POST /cases/render/jobs``) submit paths, so
+    both run the identical ingest + 422-vocabulary checks before any
+    generation starts."""
+
+    scene: SceneGraph
+    photos: list[CasePhoto]
+    case_id: str
+    proposed: SceneGraph | None
+    reviewer_id: str | None
+    classification: ReviewClassification
+    prior_notes: list[str]
+
+
+async def _prepare_render(
+    scene: str, case_id: str, *, scenario_id: str | None, roles: str | None,
+    proposed_scene: str | None, reviewer_id: str | None,
+    review_classification: str | None, files: list[UploadFile],
+) -> _RenderInputs:
+    """Ingest validation shared by every render path — sync AND async.
 
     Inputs are resolved (in order): a ``scenario_id`` → the committed sample
     views; else uploaded ``files``; else a single staged placeholder so a
     type-a-scene flow still seals honestly. The reviewed scene's
     ``confidence_notes`` are reset server-side to a human-in-the-loop note, so
-    only server-derived text is sealed.
-
-    When an AI-``proposed_scene`` is supplied, the server seals a signed
-    approval receipt — the proposed→confirmed field diff it computes itself
-    (never the client's), the ``reviewer_id``, and an honesty-gated
-    ``review_classification``. Absent one, an honest ``unverified_no_baseline``
-    receipt is sealed. The AI's real notes are carried into the receipt before
-    the confirmed scene's notes are reset (non-destructive).
+    only server-derived text is sealed. The AI's real notes are captured into
+    ``prior_notes`` BEFORE that reset, so an approval receipt can carry them
+    forward non-destructively. Raises the identical ``HTTPException`` (422 for
+    a hallucinated/malformed scene, 404 for an unknown scenario) either path
+    would raise — this runs entirely before any job is created or any
+    generation starts.
     """
-    files = files or []
     reviewed = _parse_scene(scene)
-    # Capture the AI's real notes BEFORE the human-in-the-loop reset, so the
-    # approval receipt can carry them forward non-destructively.
     prior_notes = list(reviewed.confidence_notes)
     reviewed.confidence_notes = [
         "scene reviewed and confirmed by a human operator before rendering "
@@ -513,9 +544,170 @@ async def render_case(
     # A unique, url-safe id per render so each sealed case is unambiguously
     # addressable (content-addressed keys otherwise collide on the case prefix).
     effective_id = f"{safe_component(case_id) or 'case'}-{uuid.uuid4().hex[:8]}"
-    return _run_render(reviewed, photos, effective_id, proposed=proposed,
-                       reviewer_id=reviewer_id, classification=classification,
-                       prior_notes=prior_notes)
+    return _RenderInputs(reviewed, photos, effective_id, proposed, reviewer_id,
+                         classification, prior_notes)
+
+
+@app.post("/cases/render")
+async def render_case(
+    scene: Annotated[str, Form()],
+    case_id: Annotated[str, Form()] = "case",
+    scenario_id: Annotated[str | None, Form()] = None,
+    roles: Annotated[str | None, Form()] = None,
+    proposed_scene: Annotated[str | None, Form()] = None,
+    reviewer_id: Annotated[str | None, Form()] = None,
+    review_classification: Annotated[str | None, Form()] = None,
+    files: Annotated[list[UploadFile] | None, File()] = None,
+) -> dict:
+    """Seal a human-reviewed SceneGraph into a full, verifiable case.
+
+    Inputs are resolved (in order): a ``scenario_id`` → the committed sample
+    views; else uploaded ``files``; else a single staged placeholder so a
+    type-a-scene flow still seals honestly. The reviewed scene's
+    ``confidence_notes`` are reset server-side to a human-in-the-loop note, so
+    only server-derived text is sealed.
+
+    When an AI-``proposed_scene`` is supplied, the server seals a signed
+    approval receipt — the proposed→confirmed field diff it computes itself
+    (never the client's), the ``reviewer_id``, and an honesty-gated
+    ``review_classification``. Absent one, an honest ``unverified_no_baseline``
+    receipt is sealed. The AI's real notes are carried into the receipt before
+    the confirmed scene's notes are reset (non-destructive).
+    """
+    ri = await _prepare_render(
+        scene, case_id, scenario_id=scenario_id, roles=roles,
+        proposed_scene=proposed_scene, reviewer_id=reviewer_id,
+        review_classification=review_classification, files=files or [],
+    )
+    return _run_render(ri.scene, ri.photos, ri.case_id, proposed=ri.proposed,
+                       reviewer_id=ri.reviewer_id, classification=ri.classification,
+                       prior_notes=ri.prior_notes)
+
+
+# ── Async render submission (submit + poll) ─────────────────────────────────
+# See the ``claimscene.jobs`` module for the job-store design and its honest
+# limitation (the worker below runs in-process on the accepting instance).
+
+
+def _job_storage() -> StorageBackend:
+    """Storage instance a background job thread may safely read/write.
+
+    ``InMemoryStorage`` (offline/tests) is pure in-memory with no remote
+    substrate — a FRESH instance here would be invisible to request threads
+    (including this same process's own ``GET /cases/render/jobs/{job_id}``
+    reads), so the shared module-level ``_storage`` is reused; its plain
+    dict/list mutations are safe to share across threads under the GIL (no
+    read-modify-write cycle).
+
+    ``B2Storage`` (live) is different: it keeps a mutable local ``index`` list
+    that a concurrent ``put`` from another thread could also be mutating.
+    Sharing the SAME Python object — and its local ``index`` list — between
+    this background thread and request-serving threads would add an avoidable
+    race (a shared list can be reassigned/appended by one thread while another
+    thread is mid-iteration over the old reference — a lost update). So live
+    mode gets its own fresh ``B2Storage`` per job; its constructor re-reads the
+    bucket's ``index.jsonl``, so nothing already-durable is lost — the bucket,
+    not the Python object, is the source of truth.
+
+    Adapted from Cinemory's identical helper with one noted difference: on
+    Cinemory, this isolation sits on top of a ``B2Storage`` whose
+    ``_persist_index`` does a remote read-modify-write MERGE (by key) before
+    every write, so two independent instances writing around the same time
+    still converge. ClaimScene's ``B2Storage._persist_index`` (this repo,
+    ``adapters/b2_storage.py``) currently persists a blind snapshot of its own
+    local ``index`` with no such re-read/merge step — so two independent
+    ``B2Storage`` instances (e.g. a job's and a concurrent request's) writing
+    around the same time can still last-writer-wins clobber each other's index
+    rows. Giving the job its own instance still helps (its writes are no
+    longer interleaved with a request thread sharing the exact same mutable
+    object), but does not eliminate that pre-existing gap. Porting Cinemory's
+    merge-on-write fix into ClaimScene's adapter is tracked as a separate,
+    out-of-scope hardening follow-up.
+    """
+    if isinstance(_storage, InMemoryStorage):
+        return _storage
+    return config.build_storage()  # pragma: no cover - exercised only in live mode
+
+
+def _run_render_job(
+    job_id: str, scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
+    proposed: SceneGraph | None, reviewer_id: str | None,
+    classification: ReviewClassification, prior_notes: list[str],
+) -> None:
+    """Background worker thread: run the render, updating the stored status.
+
+    Runs the SAME honest-degrade path the synchronous endpoint uses
+    (``_run_render``), against an isolated storage instance (see
+    ``_job_storage``) so this thread never mutates state a request thread also
+    touches. Never raises out of the thread and never produces an HTTP 500 for
+    a generation failure: caught here and recorded as status ``failed`` with
+    the exception CLASS NAME only (mirrors ``_run_render``'s
+    ``degrade_reason``) — the full traceback goes to the log.
+    """
+    storage = _job_storage()
+    try:
+        jobs.mark_running(storage, job_id)
+        result = _run_render(scene, photos, case_id, proposed=proposed,
+                             reviewer_id=reviewer_id, classification=classification,
+                             prior_notes=prior_notes, storage=storage)
+        jobs.mark_done(storage, job_id, result)
+    except Exception as exc:
+        _log.exception("background render job %r failed", job_id)
+        jobs.mark_failed(storage, job_id, exc)
+
+
+@app.post("/cases/render/jobs", status_code=202)
+async def create_render_job(
+    scene: Annotated[str, Form()],
+    case_id: Annotated[str, Form()] = "case",
+    scenario_id: Annotated[str | None, Form()] = None,
+    roles: Annotated[str | None, Form()] = None,
+    proposed_scene: Annotated[str | None, Form()] = None,
+    reviewer_id: Annotated[str | None, Form()] = None,
+    review_classification: Annotated[str | None, Form()] = None,
+    files: Annotated[list[UploadFile] | None, File()] = None,
+) -> dict:
+    """Submit a render as a background job; poll ``GET /cases/render/jobs/{id}``.
+
+    Accepts the IDENTICAL body as ``POST /cases/render`` — same ingest
+    validation, same 422 constrained-vocabulary rejection, same 404 for an
+    unknown scenario — but returns immediately (``202``) with a job id instead
+    of blocking for the full two-step generation. See the module docstring and
+    ``claimscene.jobs`` for why (edge proxy timeouts) and for the honest
+    limitation of the in-process worker.
+    """
+    ri = await _prepare_render(
+        scene, case_id, scenario_id=scenario_id, roles=roles,
+        proposed_scene=proposed_scene, reviewer_id=reviewer_id,
+        review_classification=review_classification, files=files or [],
+    )
+    job_id = jobs.new_job_id()
+    jobs.create(_job_storage(), job_id)
+    threading.Thread(
+        target=_run_render_job,
+        args=(job_id, ri.scene, ri.photos, ri.case_id),
+        kwargs={
+            "proposed": ri.proposed, "reviewer_id": ri.reviewer_id,
+            "classification": ri.classification, "prior_notes": ri.prior_notes,
+        },
+        daemon=True, name=f"claimscene-job-{job_id}",
+    ).start()
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/cases/render/jobs/{job_id}")
+def get_render_job(job_id: str) -> dict:
+    """Poll a submitted render job's status.
+
+    404 for an unknown job id. A stored-but-unreadable status object degrades
+    to the identical 404 (see ``claimscene.jobs.read``) rather than a 500 —
+    from the caller's side an unreadable job and a nonexistent one are the
+    same "nothing to show" answer.
+    """
+    status = jobs.read(_storage, job_id)
+    if status is None:
+        raise HTTPException(404, f"no job {job_id!r}")
+    return status
 
 
 @app.get("/cases/{case_id}")

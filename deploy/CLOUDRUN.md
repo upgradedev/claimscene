@@ -14,6 +14,7 @@ files — the Dockerfile builds it into the image). Cloud Run scales it to
 | Port | `8000` |
 | Auth | public (`--allow-unauthenticated`) |
 | Request timeout | `600s` (`--timeout 600` — see note) |
+| CPU allocation | always-on (`--no-cpu-throttling` — see async-job note below) |
 
 > **Why 600s:** a live illustration is a two-step generation (an establish-shot
 > still, then an image-to-video clip chained from it) that runs for minutes.
@@ -21,6 +22,15 @@ files — the Dockerfile builds it into the image). Cloud Run scales it to
 > completes server-side. The deploy script pins `--timeout 600` from the start
 > so a synchronous `POST /cases/render` outlives the real generation path.
 > (In offline mode render is near-instant.)
+
+> **Why `--no-cpu-throttling`:** by default Cloud Run only allocates CPU to an
+> instance while it has a request in flight — the moment a response is sent,
+> CPU is throttled to near-zero. `POST /cases/render/jobs` (async submit +
+> poll — see below) returns its `202` immediately and keeps rendering in a
+> **background thread** after that response has already gone out. Without
+> `--no-cpu-throttling` that thread would barely progress between polls. This
+> only affects billing while a job is actually in flight — Cloud Run still
+> scales to zero (and bills nothing) when idle.
 
 ## Prerequisites (one-time)
 
@@ -51,6 +61,33 @@ curl -s "$URL/health"        # {"status":"ok","mode":"offline",...}
 curl -s "$URL/scenarios" | head -c 200      # committed sample scenarios
 curl -s -o /dev/null -w '%{http_code}\n' "$URL/"   # 200 (React SPA index)
 ```
+
+## Async job submission (submit + poll)
+
+`POST /cases/render/jobs` / `GET /cases/render/jobs/{job_id}` exist alongside
+the synchronous `POST /cases/render` for the same reason `--timeout 600`
+does: edge proxies in front of Cloud Run — Firebase Hosting's rewrite proxy in
+particular — cap a single request at **~60s**, well under a real two-step
+generation's several minutes. The async pair splits that into a fast submit
+(`202` + a job id) and a cheap poll (`GET /cases/render/jobs/{job_id}` →
+`queued` / `running` / `done` / `failed`), so no single HTTP request needs to
+stay open for the full render. See `src/claimscene/jobs.py` for the job-store
+design (status objects live in the same B2/fake storage backend the rest of
+the app already uses, under `jobs/<job_id>/status.json` — not a separate
+database).
+
+**Honest limitation:** the background worker runs **in-process, on the Cloud
+Run instance that accepted the submit** — there is no external queue and no
+separate worker fleet. A client that keeps polling keeps that instance warm
+(a request in flight resets Cloud Run's idle-scale-down clock), so in
+practice the job completes. But if that specific instance is scaled down
+mid-job, the in-flight generation is lost with no automatic retry — the
+stored status simply stops advancing. This is a deliberate, acceptable
+tradeoff for a demo, not a production job queue; a production version would
+hand the work to a durable queue (e.g. Cloud Tasks) consumed by a Cloud Run
+**Job** (not a request-serving instance), so the work outlives any one
+instance. `--no-cpu-throttling` (above) is required even for this demo
+version — without it, the worker thread barely progresses between polls.
 
 ## Deploy — LIVE cutover (secrets via Secret Manager)
 

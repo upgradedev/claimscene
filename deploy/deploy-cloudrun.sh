@@ -126,6 +126,11 @@ fi
 # --timeout 600 from the start: a live illustration (still + image-to-video
 # clip) runs for minutes; the default 300s edge deadline would 504 the
 # synchronous POST /cases/render while the case completes server-side.
+# --no-cpu-throttling: POST /cases/render/jobs runs the actual two-step
+# generation in a background thread AFTER the request that submitted it has
+# already returned (see src/claimscene/jobs.py) — by default Cloud Run only
+# allocates CPU while a request is in flight, which would starve that thread
+# between polls. See deploy/CLOUDRUN.md for the full async-job note.
 gcloud run deploy "${SERVICE}" \
   --image "${IMAGE}" \
   --region "${REGION}" \
@@ -134,6 +139,7 @@ gcloud run deploy "${SERVICE}" \
   --port 8000 \
   --timeout 600 \
   --cpu 1 --memory 1Gi \
+  --no-cpu-throttling \
   --min-instances 0 --max-instances 4 \
   --set-env-vars "${ENV_VARS}" \
   ${SET_SECRETS_ARGS[@]+"${SET_SECRETS_ARGS[@]}"} \
