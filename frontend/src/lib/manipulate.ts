@@ -30,8 +30,6 @@ export function clampPct(v: number): number {
   return Math.min(CLAMP_MAX, Math.max(CLAMP_MIN, v));
 }
 
-export const PANEL_CENTER: Pct = { left: 50, top: 50 };
-
 // Compass anchors, matching the backend's own approach convention (N=up,
 // E=right, S=down, W=left — see layout.py's _APPROACH_ROT and the docstring
 // "x east, y north"; screen-space simply renders +y as up).
