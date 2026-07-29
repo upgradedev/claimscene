@@ -116,6 +116,11 @@ export function VehiclePlacementPanel({
 
   function beginMove(vehicleId: string, e: React.PointerEvent<HTMLButtonElement>) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    // Cleared at the START of every gesture, not just consumed by a click:
+    // if the previous drag's pointerup never produced a click that reached
+    // the canvas (e.g. released outside the panel), the flag would otherwise
+    // survive to wrongly swallow an unrelated later background click.
+    suppressClickRef.current = false;
     setSelectedId(vehicleId);
     const startX = e.clientX;
     const startY = e.clientY;
@@ -145,6 +150,7 @@ export function VehiclePlacementPanel({
 
   function beginRotate(vehicleId: string, e: React.PointerEvent<HTMLButtonElement>) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    suppressClickRef.current = false; // see the matching comment in beginMove
     const rect = markerRefs.current[vehicleId]?.getBoundingClientRect();
     const center = rect
       ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }

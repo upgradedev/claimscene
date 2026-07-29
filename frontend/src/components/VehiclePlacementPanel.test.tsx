@@ -184,6 +184,26 @@ describe("VehiclePlacementPanel", () => {
       expect(marker("veh_a")).toHaveAttribute("aria-pressed", "false");
     });
 
+    it("the suppression never leaks into an unrelated later click when no synthetic click ever arrives", () => {
+      // If a drag's pointerup is released outside the panel entirely, no
+      // click ever reaches the canvas to consume the flag. It must still not
+      // survive into the NEXT gesture and swallow a later, real deselect.
+      render(<VehiclePlacementPanel scene={emptyScene()} onChange={vi.fn()} />);
+      firePointer(marker("veh_a"), "pointerdown", { clientX: 100, clientY: 100 });
+      firePointer(window, "pointermove", { clientX: 100, clientY: 160 }); // -> S, past threshold
+      firePointer(window, "pointerup", { clientX: 100, clientY: 160 }); // no click ever follows
+
+      // A fresh, ordinary click-to-select (no movement) on the same marker.
+      firePointer(marker("veh_a"), "pointerdown", { clientX: 5, clientY: 5 });
+      firePointer(window, "pointerup", { clientX: 5, clientY: 5 });
+      expect(marker("veh_a")).toHaveAttribute("aria-pressed", "true");
+
+      // A single genuine background click must deselect immediately, not be
+      // swallowed by a stale flag left over from the earlier drag.
+      fireEvent.click(canvas());
+      expect(marker("veh_a")).toHaveAttribute("aria-pressed", "false");
+    });
+
     it("shows the live candidate snap target while dragging, before release", () => {
       render(<VehiclePlacementPanel scene={emptyScene()} onChange={vi.fn()} />);
       firePointer(marker("veh_a"), "pointerdown", { clientX: 100, clientY: 100 });
