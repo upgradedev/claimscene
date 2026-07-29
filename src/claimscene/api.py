@@ -30,6 +30,9 @@ GET  /cases/{id}/verify               server-side re-verification (named-check r
 GET  /cases/{id}/receipt              the detached, self-sealed receipt (raw bytes)
 GET  /cases/{id}/schematic            factual-layer playback (mp4 live / png offline)
 GET  /cases/{id}/illustration         illustration playback (302 presign live / stream)
+GET  /me/library                      an authed tenant's own cases (401 for guest)
+DELETE /me/data                       delete every object under an authed tenant's own
+                                       prefix (401 for guest)
 
 Offline by default: every route works with zero credentials on the
 deterministic fakes. In ``live`` mode the real backends are used only when
@@ -48,6 +51,18 @@ ingest validation and render path as the synchronous one (see
 ``_run_render_job`` below and the ``claimscene.jobs`` module for the job-store
 design and its honest limitation — the worker runs in-process on the instance
 that accepted the submit).
+
+Optional per-user multitenancy (see ``claimscene.auth`` and ``get_tenant``
+below, ported from our other MIT entry, Cinemory, which pioneered this
+pattern): every case route accepts an optional ``Authorization: Bearer
+<Firebase ID token>`` header. Absent — or ``FIREBASE_PROJECT_ID`` unset on
+this deployment — every request is GUEST, the exact behaviour this API has
+always had. A verified token scopes that request's storage to a
+``tenants/<uid>/`` prefix (``_tenant_storage``/``_TenantScopedStorage``), so
+a signed-in caller's cases are isolated from every other tenant and from
+guest data — by construction (a tenant's index scan can only ever see rows
+under its own prefix), not by a check that could be forgotten. See ``GET
+/me/library`` and ``DELETE /me/data`` for self-service listing/erasure.
 """
 from __future__ import annotations
 
@@ -61,11 +76,11 @@ from pathlib import Path
 from typing import Annotated, NamedTuple
 from urllib.parse import quote
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from pydantic import ValidationError
 
-from . import config, jobs, scenarios
+from . import auth, config, jobs, scenarios
 from .adapters import FakeMediaProvider, FakeVisionExtractor, InMemoryStorage
 from .case import (
     CLIENT_REVIEW_CLASSIFICATIONS,
@@ -196,7 +211,9 @@ def _uploaded_photos(files: list[UploadFile], datas: list[bytes],
     return photos
 
 
-def _case_index_match(case_id: str, *, kind: str, suffix: str) -> dict | None:
+def _case_index_match(
+    case_id: str, *, kind: str, suffix: str, storage: StorageBackend | None = None
+) -> dict | None:
     """Resolve a stored artifact row for a case from the durable index.
 
     Content-addressed keys embed the hash, so the lookup scans the index by a
@@ -204,14 +221,19 @@ def _case_index_match(case_id: str, *, kind: str, suffix: str) -> dict | None:
     key was written) + the artifact filename suffix. The index is re-read first
     so a fresh (scale-to-zero) worker that never saw the write still resolves
     the case — a traversal-shaped id can never probe outside its own prefix.
+
+    ``storage`` defaults to the module-level ``_storage`` (the exact original
+    behaviour) when omitted; a caller passes a tenant-scoped storage so the
+    scan only ever sees that tenant's own rows (see ``_tenant_storage``).
     """
-    if not hasattr(_storage, "index"):  # pragma: no cover - defensive
+    storage = _storage if storage is None else storage
+    if not hasattr(storage, "index"):  # pragma: no cover - defensive
         return None
-    reload_index = getattr(_storage, "reload_index", None)
+    reload_index = getattr(storage, "reload_index", None)
     if callable(reload_index):
         reload_index()
     prefix = f"{safe_component(case_id)}/{kind}/"
-    return next((r for r in _storage.index
+    return next((r for r in storage.index
                  if r["key"].startswith(prefix) and r["key"].endswith(suffix)), None)
 
 
@@ -229,21 +251,30 @@ _ARTIFACT_STORAGE = {
 }
 
 
-def _artifact_fetcher(case_id: str) -> Callable[[str], bytes | None]:
+def _artifact_fetcher(
+    case_id: str, storage: StorageBackend | None = None
+) -> Callable[[str], bytes | None]:
     """A ``fetch_bytes(name)`` closure that re-reads a case's stored artifact
     bytes from the store (live B2 or offline) for :func:`verify_all`. Returns
     ``None`` for an unknown/absent artifact — never raises, so a failing fetch
-    degrades a single verification check, not the whole receipt."""
+    degrades a single verification check, not the whole receipt.
+
+    ``storage`` defaults to the module-level ``_storage`` when omitted; a
+    caller passes a tenant-scoped storage so every artifact resolved here
+    comes only from that tenant's own rows (see ``_tenant_storage``).
+    """
+    storage = _storage if storage is None else storage
+
     def fetch(name: str) -> bytes | None:
         spec = _ARTIFACT_STORAGE.get(name)
         if spec is None:
             return None
         kind, suffix = spec
-        match = _case_index_match(case_id, kind=kind, suffix=suffix)
+        match = _case_index_match(case_id, kind=kind, suffix=suffix, storage=storage)
         if not match:
             return None
         try:
-            return _storage.get(match["key"])
+            return storage.get(match["key"])
         except Exception:  # pragma: no cover - index row without a live object
             return None
     return fetch
@@ -284,23 +315,29 @@ def _resolve_classification(raw: str | None) -> ReviewClassification:
     return requested
 
 
-def _playback(case_id: str, *, kind: str, suffix: str,
-              default_media: str) -> Response:
+def _playback(case_id: str, *, kind: str, suffix: str, default_media: str,
+              storage: StorageBackend | None = None) -> Response:
     """Play back a stored case artifact through a stable api-relative URL.
 
     A 302 to a FRESH presigned GET when the store can mint one (live B2 — the
     canonical storage URL is private), else the bytes streamed straight from
     the store (offline). Presigned URLs are minted per request and never
     persisted, so the sealed manifest keeps the canonical URL + hashes.
+
+    ``storage`` defaults to the module-level ``_storage`` when omitted; a
+    caller passes a tenant-scoped storage so playback only ever resolves
+    that tenant's own artifact, and the presigned URL is minted for the
+    PREFIXED key (see ``_TenantScopedStorage.get_url``), never a bare one.
     """
-    match = _case_index_match(case_id, kind=kind, suffix=suffix)
+    storage = _storage if storage is None else storage
+    match = _case_index_match(case_id, kind=kind, suffix=suffix, storage=storage)
     if not match:
         raise HTTPException(404, f"no {suffix.lstrip('/')} for case {case_id!r}")
-    get_url = getattr(_storage, "get_url", None)
+    get_url = getattr(storage, "get_url", None)
     if callable(get_url):
         return RedirectResponse(url=get_url(match["key"]), status_code=302)
     try:
-        data = _storage.get(match["key"])
+        data = storage.get(match["key"])
     except Exception as exc:  # pragma: no cover - index row without object
         raise HTTPException(404, f"artifact missing for case {case_id!r}") from exc
     return Response(content=data, media_type=match.get("content_type") or default_media)
@@ -374,6 +411,141 @@ def _run_render(scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
         body = _case_body(result, degraded_request=True)
         body["degrade_reason"] = type(exc).__name__
         return body
+
+
+# ── Optional per-user multitenancy (see claimscene.auth) ───────────────────────
+# Ported from our other MIT entry, Cinemory, which pioneered this pattern. A
+# signed-in caller's cases are isolated to their OWN tenant prefix — BY
+# CONSTRUCTION, not by a check that could be forgotten: every lookup in this
+# module resolves a case through a storage object's ``index``, and
+# ``_TenantScopedStorage.index`` physically cannot contain a row outside its
+# own prefix (see its docstring). Guest (no/absent header, or multitenancy off
+# entirely — see ``get_tenant``) always resolves to the SAME objects this API
+# used before this section existed (``_storage`` directly, no wrapper), so
+# guest behaviour is byte-identical.
+
+
+def get_tenant(authorization: Annotated[str | None, Header()] = None) -> str | None:
+    """FastAPI dependency: the caller's verified tenant id, or ``None`` for guest.
+
+    - ``FIREBASE_PROJECT_ID`` unset -> multitenancy is OFF for this deployment:
+      ALWAYS returns ``None``, even when ``authorization`` is present — this is
+      what keeps a deploy with no such env var configured (the current
+      production default) behaving exactly as it did before this dependency
+      existed. The header is not even inspected in that case.
+    - No/empty ``authorization`` -> ``None`` (GUEST; not an error).
+    - A well-formed, valid ``Bearer <token>`` -> the token's verified ``uid``.
+    - A PRESENT but invalid/expired/malformed credential -> ``HTTPException
+      (401)``. A bad credential must never silently downgrade to guest (see
+      ``auth.uid_from_authorization``'s own contract).
+
+    The tenant id comes ONLY from here — the verified token's ``sub`` claim.
+    Nothing in this module ever reads a tenant from a query param, request
+    body field, cookie, or any header other than ``Authorization``, so it is
+    structurally impossible for a caller to set their own tenant.
+    """
+    project_id = os.environ.get(auth.PROJECT_ID_ENV_VAR)
+    if not project_id:
+        return None
+    try:
+        return auth.uid_from_authorization(authorization, project_id=project_id)
+    except auth.AuthError as exc:
+        raise HTTPException(401, str(exc)) from exc
+
+
+def _tenant_prefix(uid: str) -> str:
+    """The storage-key prefix a verified tenant's data lives under."""
+    return f"tenants/{safe_component(uid)}/"
+
+
+class _TenantScopedStorage:
+    """A tenant-prefixing view over a base :class:`~claimscene.ports.StorageBackend`
+    — the isolation core of multitenancy.
+
+    Every key a caller passes to ``put``/``get``/``exists``/``get_url``/
+    ``delete`` is a TENANT-RELATIVE key; ``prefix`` is prepended before it ever
+    reaches the base backend. ``index`` does the reverse for reads: it returns
+    ONLY the base backend's rows whose key starts with ``prefix``, with the
+    prefix stripped back off — so the existing ``<case>/<kind>/<shard>/
+    <sha256>/<file>`` matching in ``_case_index_match``/``_artifact_fetcher``
+    (and ``claimscene.jobs``' ``jobs/<id>/status.json`` keys) works completely
+    unchanged against a tenant-scoped view, and a tenant's index scan is
+    PHYSICALLY UNABLE to enumerate a row outside its own prefix — a
+    cross-tenant (or guest) lookup 404s because the row is never in the list to
+    begin with, not because a comparison happened to reject it.
+
+    There is no method on this class parameterised by anything a caller
+    controls: ``prefix`` is fixed at construction from a VERIFIED uid (see
+    ``_tenant_storage``), so nothing reachable through this object can ever
+    address a key outside it.
+
+    ``get_url``/``delete`` are exposed only when the base backend has them —
+    mirrors this codebase's existing ``getattr(storage, "get_url", None)``
+    capability-probing pattern, so a InMemoryStorage-backed tenant (no
+    ``get_url``) falls through to the byte-streaming playback path exactly
+    like guest InMemoryStorage does, instead of a broken redirect.
+
+    Ported from Cinemory's identical class (that repo's own multitenancy
+    isolation core).
+    """
+
+    def __init__(self, base: StorageBackend, prefix: str) -> None:
+        self._base = base
+        self._prefix = prefix
+
+        base_get_url = getattr(base, "get_url", None)
+        if callable(base_get_url):
+            def get_url(key: str, *, expires_in: int = 3600) -> str:
+                return base_get_url(f"{prefix}{key}", expires_in=expires_in)
+            self.get_url = get_url
+
+        base_delete = getattr(base, "delete", None)
+        if callable(base_delete):
+            def delete(key: str) -> None:
+                return base_delete(f"{prefix}{key}")
+            self.delete = delete
+
+    def put(self, key: str, data: bytes, *, content_type: str = "application/octet-stream") -> str:
+        return self._base.put(f"{self._prefix}{key}", data, content_type=content_type)
+
+    def get(self, key: str) -> bytes:
+        return self._base.get(f"{self._prefix}{key}")
+
+    def exists(self, key: str) -> bool:
+        return self._base.exists(f"{self._prefix}{key}")
+
+    @property
+    def index(self) -> list[dict]:
+        if not hasattr(self._base, "index"):  # pragma: no cover - defensive
+            raise AttributeError("index")
+        return [
+            {**row, "key": row["key"][len(self._prefix):]}
+            for row in self._base.index
+            if row.get("key", "").startswith(self._prefix)
+        ]
+
+    def reload_index(self) -> list[dict]:
+        """Always safe to call, regardless of base capability — mirrors this
+        codebase's ``if callable(reload_index): reload_index()`` opportunistic
+        pattern; a base without one is just a no-op here."""
+        reload = getattr(self._base, "reload_index", None)
+        if callable(reload):
+            reload()
+        return self.index
+
+
+def _tenant_storage(uid: str | None) -> StorageBackend:
+    """The request-time storage for ``uid`` — tenant-scoped, or GUEST.
+
+    GUEST (``uid is None``) returns the EXACT module-level ``_storage``
+    object — no wrapper — so every existing guest code path (including tests
+    that monkeypatch ``api._storage`` directly) is byte-identical to before
+    multitenancy existed. An authed uid gets a fresh ``_TenantScopedStorage``
+    over that SAME shared storage.
+    """
+    if uid is None:
+        return _storage
+    return _TenantScopedStorage(_storage, _tenant_prefix(uid))
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
@@ -551,6 +723,7 @@ async def _prepare_render(
 @app.post("/cases/render")
 async def render_case(
     scene: Annotated[str, Form()],
+    tenant: Annotated[str | None, Depends(get_tenant)],
     case_id: Annotated[str, Form()] = "case",
     scenario_id: Annotated[str | None, Form()] = None,
     roles: Annotated[str | None, Form()] = None,
@@ -573,6 +746,11 @@ async def render_case(
     ``review_classification``. Absent one, an honest ``unverified_no_baseline``
     receipt is sealed. The AI's real notes are carried into the receipt before
     the confirmed scene's notes are reset (non-destructive).
+
+    A signed-in ``tenant`` (see ``get_tenant``) seals into their own storage
+    prefix; GUEST (``tenant is None``) seals at the unprefixed root exactly as
+    before multitenancy existed (``_tenant_storage(None)`` is the module-level
+    ``_storage`` itself).
     """
     ri = await _prepare_render(
         scene, case_id, scenario_id=scenario_id, roles=roles,
@@ -581,7 +759,7 @@ async def render_case(
     )
     return _run_render(ri.scene, ri.photos, ri.case_id, proposed=ri.proposed,
                        reviewer_id=ri.reviewer_id, classification=ri.classification,
-                       prior_notes=ri.prior_notes)
+                       prior_notes=ri.prior_notes, storage=_tenant_storage(tenant))
 
 
 # ── Async render submission (submit + poll) ─────────────────────────────────
@@ -609,30 +787,43 @@ def _job_storage() -> StorageBackend:
     bucket's ``index.jsonl``, so nothing already-durable is lost — the bucket,
     not the Python object, is the source of truth.
 
-    Adapted from Cinemory's identical helper with one noted difference: on
-    Cinemory, this isolation sits on top of a ``B2Storage`` whose
-    ``_persist_index`` does a remote read-modify-write MERGE (by key) before
-    every write, so two independent instances writing around the same time
-    still converge. ClaimScene's ``B2Storage._persist_index`` (this repo,
-    ``adapters/b2_storage.py``) currently persists a blind snapshot of its own
-    local ``index`` with no such re-read/merge step — so two independent
-    ``B2Storage`` instances (e.g. a job's and a concurrent request's) writing
-    around the same time can still last-writer-wins clobber each other's index
-    rows. Giving the job its own instance still helps (its writes are no
-    longer interleaved with a request thread sharing the exact same mutable
-    object), but does not eliminate that pre-existing gap. Porting Cinemory's
-    merge-on-write fix into ClaimScene's adapter is tracked as a separate,
-    out-of-scope hardening follow-up.
+    Adapted from Cinemory's identical helper. ``B2Storage._persist_index``
+    (this repo, ``adapters/b2_storage.py``) now does the same remote
+    read-modify-write MERGE (by key) before every write that Cinemory's does,
+    so two independent ``B2Storage`` instances (e.g. a job's and a concurrent
+    request's) writing around the same time converge instead of
+    last-writer-wins clobbering each other's index rows. Giving the job its
+    own instance still matters — see ``_persist_index``'s own docstring for
+    the small residual read-modify-write race window merge-on-write does not
+    close (accepted, not eliminated) — but the routine data-loss failure mode
+    this docstring used to describe is fixed.
     """
     if isinstance(_storage, InMemoryStorage):
         return _storage
     return config.build_storage()  # pragma: no cover - exercised only in live mode
 
 
+def _tenant_job_storage(uid: str | None) -> StorageBackend:
+    """Like ``_tenant_storage``, but for the background-job worker thread.
+
+    GUEST (``uid is None``) returns EXACTLY ``_job_storage()`` — the identical
+    call the pre-multitenancy worker always made (see that function's own
+    docstring for why the background thread needs its own storage instance in
+    live mode). An authed uid wraps that SAME choice with the tenant prefix,
+    so a tenant's jobs live under their own prefix too and only ever poll
+    their own (``jobs/<id>/status.json`` becomes
+    ``tenants/<uid>/jobs/<id>/status.json``).
+    """
+    if uid is None:
+        return _job_storage()
+    return _TenantScopedStorage(_job_storage(), _tenant_prefix(uid))
+
+
 def _run_render_job(
     job_id: str, scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
     proposed: SceneGraph | None, reviewer_id: str | None,
     classification: ReviewClassification, prior_notes: list[str],
+    uid: str | None = None,
 ) -> None:
     """Background worker thread: run the render, updating the stored status.
 
@@ -643,8 +834,14 @@ def _run_render_job(
     a generation failure: caught here and recorded as status ``failed`` with
     the exception CLASS NAME only (mirrors ``_run_render``'s
     ``degrade_reason``) — the full traceback goes to the log.
+
+    ``uid``: the verified tenant id for a tenant-scoped submission, or
+    ``None`` for guest — the exact, unchanged behaviour this function always
+    had (every statement below is identical to before multitenancy existed
+    when ``uid is None``, since ``_tenant_job_storage(None)`` is exactly
+    ``_job_storage()``).
     """
-    storage = _job_storage()
+    storage = _tenant_job_storage(uid)
     try:
         jobs.mark_running(storage, job_id)
         result = _run_render(scene, photos, case_id, proposed=proposed,
@@ -659,6 +856,7 @@ def _run_render_job(
 @app.post("/cases/render/jobs", status_code=202)
 async def create_render_job(
     scene: Annotated[str, Form()],
+    tenant: Annotated[str | None, Depends(get_tenant)],
     case_id: Annotated[str, Form()] = "case",
     scenario_id: Annotated[str | None, Form()] = None,
     roles: Annotated[str | None, Form()] = None,
@@ -675,6 +873,10 @@ async def create_render_job(
     of blocking for the full two-step generation. See the module docstring and
     ``claimscene.jobs`` for why (edge proxy timeouts) and for the honest
     limitation of the in-process worker.
+
+    GUEST (``tenant is None``) is byte-identical to before multitenancy:
+    ``_tenant_job_storage(None)`` is exactly ``_job_storage()`` and
+    ``_run_render_job(..., uid=None)`` runs the exact original job body.
     """
     ri = await _prepare_render(
         scene, case_id, scenario_id=scenario_id, roles=roles,
@@ -682,13 +884,14 @@ async def create_render_job(
         review_classification=review_classification, files=files or [],
     )
     job_id = jobs.new_job_id()
-    jobs.create(_job_storage(), job_id)
+    jobs.create(_tenant_job_storage(tenant), job_id)
     threading.Thread(
         target=_run_render_job,
         args=(job_id, ri.scene, ri.photos, ri.case_id),
         kwargs={
             "proposed": ri.proposed, "reviewer_id": ri.reviewer_id,
             "classification": ri.classification, "prior_notes": ri.prior_notes,
+            "uid": tenant,
         },
         daemon=True, name=f"claimscene-job-{job_id}",
     ).start()
@@ -696,32 +899,40 @@ async def create_render_job(
 
 
 @app.get("/cases/render/jobs/{job_id}")
-def get_render_job(job_id: str) -> dict:
+def get_render_job(job_id: str, tenant: Annotated[str | None, Depends(get_tenant)]) -> dict:
     """Poll a submitted render job's status.
 
     404 for an unknown job id. A stored-but-unreadable status object degrades
     to the identical 404 (see ``claimscene.jobs.read``) rather than a 500 —
     from the caller's side an unreadable job and a nonexistent one are the
     same "nothing to show" answer.
+
+    Tenant-scoped the same way ``create_render_job`` writes: a tenant's jobs
+    live under their own prefix (see ``_tenant_job_storage``), so polling a
+    known job id under someone else's tenant (or as guest) resolves to no
+    object under THIS caller's prefix — the identical 404 as an unknown id.
+    GUEST (``tenant is None``) reads via ``_tenant_storage(None)``, which is
+    exactly the module-level ``_storage`` — byte-identical to before.
     """
-    status = jobs.read(_storage, job_id)
+    status = jobs.read(_tenant_storage(tenant), job_id)
     if status is None:
         raise HTTPException(404, f"no job {job_id!r}")
     return status
 
 
 @app.get("/cases/{case_id}")
-def get_case(case_id: str) -> Response:
+def get_case(case_id: str, tenant: Annotated[str | None, Depends(get_tenant)]) -> Response:
     """The sealed manifest, served as the RAW canonical bytes so the browser
     can recompute the SHA-256 seal exactly (in-browser Verify)."""
-    match = _case_index_match(case_id, kind="manifest", suffix="/manifest.json")
+    storage = _tenant_storage(tenant)
+    match = _case_index_match(case_id, kind="manifest", suffix="/manifest.json", storage=storage)
     if not match:
         raise HTTPException(404, f"no case named {case_id!r}")
-    return Response(content=_storage.get(match["key"]), media_type="application/json")
+    return Response(content=storage.get(match["key"]), media_type="application/json")
 
 
 @app.get("/cases/{case_id}/verify")
-def verify_case(case_id: str) -> dict:
+def verify_case(case_id: str, tenant: Annotated[str | None, Depends(get_tenant)]) -> dict:
     """Server-side re-verification of a sealed case as a named-check receipt.
 
     Re-fetches the manifest + every recorded artifact from the store and re-runs
@@ -731,18 +942,21 @@ def verify_case(case_id: str) -> dict:
     case is a 404; anything else returns a fully-shaped receipt (never a 500),
     with failing checks doing the talking.
     """
-    match = _case_index_match(case_id, kind="manifest", suffix="/manifest.json")
+    storage = _tenant_storage(tenant)
+    match = _case_index_match(case_id, kind="manifest", suffix="/manifest.json", storage=storage)
     if not match:
         raise HTTPException(404, f"no case named {case_id!r}")
     try:
-        manifest = json.loads(_storage.get(match["key"]))
+        manifest = json.loads(storage.get(match["key"]))
     except Exception:  # unreadable bytes → a fully-shaped failing receipt, not a 500
         manifest = {}
-    return verify_all(manifest, _artifact_fetcher(case_id)).to_dict()
+    return verify_all(manifest, _artifact_fetcher(case_id, storage)).to_dict()
 
 
 @app.get("/cases/{case_id}/receipt")
-def get_case_receipt(case_id: str) -> Response:
+def get_case_receipt(
+    case_id: str, tenant: Annotated[str | None, Depends(get_tenant)]
+) -> Response:
     """The detached, self-sealed verification receipt as the RAW canonical bytes.
 
     Stored as its own small object alongside the case artifacts when the case
@@ -752,31 +966,99 @@ def get_case_receipt(case_id: str) -> Response:
     independently re-verifiable attestation, not a live recomputation. A case
     that has no stored receipt is a 404.
     """
-    match = _case_index_match(case_id, kind="receipt", suffix="/receipt.json")
+    storage = _tenant_storage(tenant)
+    match = _case_index_match(case_id, kind="receipt", suffix="/receipt.json", storage=storage)
     if not match:
         raise HTTPException(404, f"no receipt for case {case_id!r}")
-    return Response(content=_storage.get(match["key"]), media_type="application/json")
+    return Response(content=storage.get(match["key"]), media_type="application/json")
 
 
 @app.get("/cases/{case_id}/schematic")
-def get_case_schematic(case_id: str) -> Response:
+def get_case_schematic(
+    case_id: str, tenant: Annotated[str | None, Depends(get_tenant)]
+) -> Response:
     """Factual-layer playback: the animated schematic MP4 when it exists
     (ffmpeg present — live/container), else the deterministic hero PNG. The
     factual layer is real in every mode, so this route always resolves."""
-    if _case_index_match(case_id, kind="schematic", suffix="/schematic.mp4"):
+    storage = _tenant_storage(tenant)
+    if _case_index_match(case_id, kind="schematic", suffix="/schematic.mp4", storage=storage):
         return _playback(case_id, kind="schematic", suffix="/schematic.mp4",
-                         default_media="video/mp4")
+                         default_media="video/mp4", storage=storage)
     return _playback(case_id, kind="schematic", suffix="/schematic.png",
-                     default_media="image/png")
+                     default_media="image/png", storage=storage)
 
 
 @app.get("/cases/{case_id}/illustration")
-def get_case_illustration(case_id: str) -> Response:
+def get_case_illustration(
+    case_id: str, tenant: Annotated[str | None, Depends(get_tenant)]
+) -> Response:
     """Illustration clip playback (302 presign live / stream offline). Offline
     the bytes are the deterministic fake — the client shows the disclosed
     placeholder rather than feeding them to a <video>."""
+    storage = _tenant_storage(tenant)
     return _playback(case_id, kind="illustration", suffix="/illustration.mp4",
-                     default_media="video/mp4")
+                     default_media="video/mp4", storage=storage)
+
+
+@app.get("/me/library")
+def get_my_library(tenant: Annotated[str | None, Depends(get_tenant)]) -> dict:
+    """List the authed tenant's own cases, from THEIR tenant-scoped index only.
+
+    401 for guest (``tenant is None``) — this route only ever makes sense for
+    an authenticated caller. The listing is isolated by construction: a
+    ``_TenantScopedStorage.index`` scan can physically only contain rows under
+    this caller's own ``tenants/<uid>/`` prefix (see that class's docstring),
+    so this can never leak another tenant's — or a guest's — cases.
+    """
+    if tenant is None:
+        raise HTTPException(401, "sign in required")
+    storage = _tenant_storage(tenant)
+    reload_index = getattr(storage, "reload_index", None)
+    if callable(reload_index):
+        reload_index()
+
+    cases: list[dict] = []
+    for row in storage.index:
+        key = row["key"]
+        parts = key.split("/")
+        if len(parts) < 2 or parts[1] != "manifest" or not key.endswith("/manifest.json"):
+            continue
+        entry: dict = {"case_id": parts[0], "manifest_hash": None, "created_at": None}
+        try:
+            manifest = json.loads(storage.get(key))
+        except Exception:  # unreadable manifest → still list the case, best-effort
+            manifest = None
+        if isinstance(manifest, dict):
+            entry["manifest_hash"] = manifest.get("manifest_hash")
+            entry["created_at"] = manifest.get("created_at")
+        cases.append(entry)
+    return {"cases": cases}
+
+
+@app.delete("/me/data")
+def delete_my_data(tenant: Annotated[str | None, Depends(get_tenant)]) -> dict:
+    """Delete every object under the authed tenant's own storage prefix.
+
+    401 for guest (``tenant is None``). The deletion is STRUCTURALLY scoped:
+    ``storage`` is a ``_TenantScopedStorage`` built from the VERIFIED uid (see
+    ``_tenant_storage``/``_tenant_prefix``), so every key this loop can ever
+    construct is ``tenants/<uid>/<key>`` — there is no code path here that can
+    address a guest key (no prefix) or another tenant's prefix. Deleting each
+    key also removes its row from the BASE storage's own index (see
+    ``InMemoryStorage.delete``/``B2Storage.delete``), so this tenant's
+    ``index`` (and therefore ``/me/library``) is empty afterward with no
+    separate index-cleanup step needed.
+    """
+    if tenant is None:
+        raise HTTPException(401, "sign in required")
+    storage = _tenant_storage(tenant)
+    reload_index = getattr(storage, "reload_index", None)
+    if callable(reload_index):
+        reload_index()
+    keys = [row["key"] for row in storage.index]  # materialise before mutating
+    for key in keys:
+        storage.delete(key)
+    return {"deleted": len(keys)}
 
 
 # Serve the compiled web client from the same origin as the API (single Cloud

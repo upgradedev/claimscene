@@ -11,7 +11,13 @@ bucket itself*. That makes the catalogue durable and multi-instance safe — a
 fresh worker that never saw a write can still resolve a case another
 instance sealed (see :meth:`reload_index`). The index mirrors
 ``InMemoryStorage.index`` exactly, so offline and live paths expose the
-identical provenance surface.
+identical provenance surface. Persisting it (:meth:`_persist_index`) is a
+merge-on-write: every write re-reads the remote index and unions rows *by
+key* rather than overwriting it from the local snapshot, so two independent
+writers (a request thread and a background render-job thread, or two
+instances) never clobber each other's rows — see that method's docstring,
+and :meth:`delete`'s ``removed`` handling for why a deletion needs its own
+merge path.
 
 Env (canonical Backblaze names primary; legacy aliases also accepted —
 resolution lives in :func:`claimscene.config.resolve_b2_config`):
@@ -151,22 +157,70 @@ class B2Storage:
         empty catalogue rather than raising, so lookups degrade to
         "not found" instead of crashing.
         """
+        self.index = self._read_remote_index_rows()
+        return self.index
+
+    def _read_remote_index_rows(self) -> list[dict]:
+        """Current durable ``index.jsonl`` rows — best-effort by design.
+
+        A missing index (first run), a read error, a corrupt line, or a
+        non-row line yields FEWER rows rather than raising: readers degrade
+        to "not found", and because :meth:`_persist_index` calls this on
+        every put, the next merge-on-write rewrites a clean index
+        (self-healing) — a corrupt remote line must never be able to fail
+        ``put``. Ported from Cinemory's identical adapter method.
+        """
         try:
             raw = self._client.get_object(Bucket=self.bucket, Key=self._index_key)[
                 "Body"
             ].read()
         except Exception:  # missing/unreadable index (first run) → empty
-            self.index = []
-            return self.index
+            return []
         rows: list[dict] = []
-        for line in raw.decode("utf-8").splitlines():
+        for line in raw.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-        self.index = rows
-        return self.index
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:  # corrupt line — drop; next persist writes clean
+                continue
+            if isinstance(row, dict) and "key" in row:
+                rows.append(row)
+        return rows
 
-    def _persist_index(self) -> None:
+    def _persist_index(self, *, removed: str | None = None) -> None:
+        """Merge-on-write: union our rows with the current remote index.
+
+        Concurrent writers (e.g. a request thread and a background render-job
+        thread — see ``claimscene.api._job_storage``) used to last-writer-wins
+        clobber each other's ``index.jsonl`` rows: a plain overwrite of the
+        local snapshot could erase another writer's rows entirely. Instead of
+        writing our snapshot blindly, we re-read the remote index and union
+        rows **by key** — idempotent, and newest-wins per key (our in-memory
+        row, which includes the put that triggered this call, overlays the
+        remote row for the same key; keys are content-addressed, so same-key
+        rows are identical in practice). A small read-modify-write race window
+        remains between the re-read and the put; that is accepted — losing it
+        costs one index row until the next merge-on-write or manual reconcile,
+        and building distributed locking over B2 is out of scope by design.
+        Ported from Cinemory's identical adapter method (``#19``/``#36``
+        there).
+
+        ``removed``: set by :meth:`delete` to the key just deleted. The union
+        above is correct for a PUT (a key can only ever gain/keep a row), but
+        is WRONG for a DELETE: the remote snapshot we just re-read still
+        lists the key we are trying to remove, so a plain union would
+        silently resurrect its row in the merged result. Dropping it from
+        the remote snapshot BEFORE the union closes that hole — our
+        in-memory ``index`` (which no longer has the row either, see
+        :meth:`delete`) can never add it back.
+        """
+        merged: dict[str, dict] = {row["key"]: row for row in self._read_remote_index_rows()}
+        if removed is not None:
+            merged.pop(removed, None)
+        merged.update((row["key"], row) for row in self.index)
+        self.index = list(merged.values())
         self._client.put_object(
             Bucket=self.bucket,
             Key=self._index_key,
@@ -192,6 +246,36 @@ class B2Storage:
     def get(self, key: str) -> bytes:
         actual_key = f"{self.key_prefix}{key}"
         return self._client.get_object(Bucket=self.bucket, Key=actual_key)["Body"].read()
+
+    def delete(self, key: str) -> None:
+        """Delete the object at ``key`` and drop its durable index row.
+
+        Deleting an absent key is a no-op (S3/B2 ``DeleteObject`` is itself
+        idempotent — it does not error on a missing key), so callers never
+        need to check ``exists`` first. See :meth:`_persist_index`'s
+        ``removed`` parameter for why this needs its own merge path rather
+        than the plain union :meth:`put` uses. Ported from Cinemory's
+        identical adapter method (added there for its own ``DELETE
+        /me/data``).
+
+        Known limitation (same family as the accepted race documented in
+        :meth:`_persist_index`, not something ``removed`` fixes): a SECOND,
+        already-constructed ``B2Storage`` instance holding an in-memory
+        ``index`` snapshot taken BEFORE this delete still carries the
+        deleted row. If that instance later calls :meth:`put` for anything
+        at all — before ever calling :meth:`reload_index` — its own
+        merge-on-write union re-adds the deleted row to the durable index,
+        because ``self.index`` (not just the remote re-read) is part of
+        that union. Multi-instance deployments therefore have a window
+        where a stale writer can resurrect a just-deleted tenant's row;
+        this mirrors the codebase's existing accepted stance that
+        distributed locking over B2 is out of scope, so it is documented
+        rather than solved here.
+        """
+        actual_key = f"{self.key_prefix}{key}"
+        self._client.delete_object(Bucket=self.bucket, Key=actual_key)
+        self.index = [row for row in self.index if row["key"] != key]
+        self._persist_index(removed=key)
 
     def get_url(self, key: str, *, expires_in: int = 3600) -> str:
         """Mint a fresh time-limited presigned GET URL (private bucket).
