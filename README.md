@@ -188,7 +188,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 pip install -e ".[server]"      # [server] adds the API (fastapi + multipart)
 
-pytest                          # 289 offline backend tests
+pytest                          # 290 offline backend tests
 python -m claimscene.cli --case demo --out out
 ```
 
@@ -353,7 +353,7 @@ desynced or over-length video fails the build.
 
 ## Testing & CI
 
-- **289 offline backend tests** (unit / integration / e2e): schema
+- **290 offline backend tests** (unit / integration / e2e): schema
   round-trips and rejection of hallucinated fields, layout determinism and
   contact-geometry properties, golden-file SVG, provenance seal/tamper, real
   B2 adapter against an S3 stub (**+ a presign contract test asserting SigV4 +
