@@ -126,13 +126,17 @@ def build_report(scene: SceneGraph, timeline: Timeline, *, case_id: str,
     return "\n".join(lines)
 
 
-def _diorama_scene_description(scene: SceneGraph) -> str:
-    """The shared miniature-diorama scene wording (still + clip prompts).
+def _forensic_scene_description(scene: SceneGraph) -> str:
+    """The shared forensic-reconstruction scene wording (still + clip prompts).
 
     Deterministic, built only from the constrained vocabulary, and kept in
-    the toy-diorama register on purpose: it is unmistakably an illustration
-    (self-disclosing), it depicts no people and no injuries, and it passes
-    generative-model content moderation cleanly (probe-verified).
+    the computer-generated forensic-reconstruction register on purpose: a
+    clean, serious CGI accident-reconstruction render, not a toy and not a
+    cartoon, that states plainly it is a computer-generated reconstruction
+    and not a real recording (self-disclosing). It depicts no people and no
+    injuries, which keeps it clear of the sharper content-moderation
+    triggers by construction, though unlike the retired toy-diorama register
+    this exact wording has not yet been probed against a live provider.
     """
     road = scene.road
     movements = {m.vehicle_id: m for m in scene.movements}
@@ -140,10 +144,10 @@ def _diorama_scene_description(scene: SceneGraph) -> str:
     for v in scene.vehicles:
         m = movements.get(v.id)
         if m is None or m.maneuver.value == "parked":
-            phrase = f"a parked {v.color.value} toy {v.kind.value}"
+            phrase = f"a parked {v.color.value} {v.kind.value}"
         else:
             phrase = (
-                f"a {v.color.value} toy {v.kind.value} that arrived from the "
+                f"a {v.color.value} {v.kind.value} that arrived from the "
                 f"{m.approach.value}, {_MANEUVER_WORDS[m.maneuver.value]} "
                 f"{_SPEED_WORDS[m.speed_band.value]}"
             )
@@ -154,19 +158,22 @@ def _diorama_scene_description(scene: SceneGraph) -> str:
             )
         parts.append(phrase)
     return (
-        "Miniature diecast toy car diorama on a printed road play mat showing "
+        "Computer-generated 3D forensic accident-reconstruction render, not "
+        "a real recording, showing "
         f"{_LAYOUT_WORDS[scene.road.layout.value]} with "
         f"{_SIGNAL_WORDS[road.signal]}: " + "; ".join(parts) + ". "
-        "Tabletop scale-model scene, studio product photography, softbox "
-        "lighting, no people, no injuries, collectible toy scale models."
+        "Accurate vehicle proportions, real road surface and lane markings, "
+        "neutral daylight, professional CGI clarity, not a toy, not a "
+        "cartoon, no people, no injuries."
     )
 
 
 def illustration_still_prompt(scene: SceneGraph) -> str:
     """Deterministic prompt for the establish-shot still (text → image)."""
     return (
-        "Stylized, clearly non-photorealistic illustration. "
-        + _diorama_scene_description(scene)
+        "Clean, serious forensic accident-reconstruction still, "
+        "establish-shot framing. "
+        + _forensic_scene_description(scene)
         + " Slightly elevated three-quarter view of the whole scene."
     )
 
@@ -178,9 +185,9 @@ def illustration_prompt(scene: SceneGraph) -> str:
     self-disclosing instruction.
     """
     return (
-        "Slow smooth camera orbit around this miniature toy car diorama, an "
-        "obvious artistic illustration, clearly non-photorealistic. "
-        + _diorama_scene_description(scene)
-        + " The toy vehicles stay perfectly still; gentle parallax only. "
+        "Slow smooth camera orbit around this forensic "
+        "accident-reconstruction scene. "
+        + _forensic_scene_description(scene)
+        + " The vehicles stay perfectly still; gentle parallax only. "
         f"Overlay text: '{DISCLOSURE}'."
     )
