@@ -32,9 +32,10 @@ every case into two layers and never lets them blur:
    input, same bytes, every time.
 2. **The illustration layer.** A generative establish-shot still plus a
    short video clip chained from it, both prompted in a deliberately
-   non-photorealistic miniature-diorama register, watermarked in the prompt
-   and sealed in the manifest as an illustration. The `degraded` flag
-   honestly records whether a real provider generated them.
+   computer-generated forensic-reconstruction register that states plainly
+   it is not a real recording, watermarked in the prompt and sealed in the
+   manifest as an illustration. The `degraded` flag honestly records
+   whether a real provider generated them.
 
 A tamper-evident manifest chains both layers, every input photo (with its
 `source`, `attribution`, and `license`), and every hash. Re-badge a licensed

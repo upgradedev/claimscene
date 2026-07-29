@@ -427,7 +427,8 @@ def check_genblaze_illustration_port_sealed() -> tuple[bool, str]:
             return False, f"illustration provenance missing {field_name!r}"
     if ill["degraded"] is not True:
         return False, "offline run must seal degraded=True"
-    if "non-photorealistic" not in ill["prompt"]:
+    marker = "not a real recording"
+    if marker not in ill["prompt"] or marker not in ill["still_prompt"]:
         return False, "illustration prompt is not self-disclosing"
     return True, "illustration sealed with provider/model/prompt + honest degraded flag"
 

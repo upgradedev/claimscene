@@ -60,19 +60,36 @@ def test_illustration_sealed_as_degraded_fake(pipeline, photos):
     assert ill["provider"] == "fake-media"
     assert ill["degraded"] is True
     assert ill["model"] == "pixverse-v6-i2v"
-    assert "non-photorealistic" in ill["prompt"]
+    assert "not a real recording" in ill["prompt"]
 
 
 def test_illustration_still_sealed_and_chained_into_clip(pipeline, photos):
     result = _run(pipeline, photos)
     ill = result.manifest["illustration"]
     assert ill["still_model"] == "seedream-5.0-lite"
-    assert "Miniature diecast toy car diorama" in ill["still_prompt"]
+    assert "Computer-generated 3D forensic accident-reconstruction render" in ill["still_prompt"]
     still_ref = result.artifacts["illustration_still"]
     assert ill["still_sha256"] == still_ref.sha256
     assert still_ref.content_type == "image/png"
     # Both illustration artifacts live under the same storage kind.
     assert still_ref.key.split("/")[1] == "illustration"
+
+
+def test_illustration_prompts_avoid_photorealism_cues(pipeline, photos):
+    """The forensic-reconstruction register must never nudge the generative
+    model toward photorealism: none of the risky cue words may appear in
+    either prompt, and the not-a-real-recording marker must be present in
+    both (the honesty guarantee stays test-enforced even though the wording
+    changed)."""
+    result = _run(pipeline, photos)
+    ill = result.manifest["illustration"]
+    forbidden = ("photorealistic", "photograph", "dashcam", "real footage",
+                "cinematic film still", "documentary footage")
+    for prompt in (ill["prompt"], ill["still_prompt"]):
+        lowered = prompt.lower()
+        for word in forbidden:
+            assert word not in lowered, f"{word!r} found in prompt"
+        assert "not a real recording" in prompt
 
 
 def test_manifest_inputs_carry_roles_and_sources(pipeline, photos):
