@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
-import { useRender } from "@/lib/queries";
+import { usePollRenderJob, useSubmitRenderJob } from "@/lib/queries";
 import { useCaseStore } from "@/store/useCaseStore";
 import { Button } from "../ui/button";
 import { cn } from "@/lib/utils";
@@ -19,13 +19,22 @@ export function RenderStep() {
   const caseId = useCaseStore((s) => s.caseId);
   const setResult = useCaseStore((s) => s.setResult);
   const goTo = useCaseStore((s) => s.goTo);
-  const render = useRender();
+  const submitJob = useSubmitRenderJob();
   const fired = useRef(false);
   const [phase, setPhase] = useState(0);
+  // Async submit + poll: a real render can take minutes (an establish-shot
+  // still, then an image-to-video clip chained from it — see
+  // claimscene.api's module docstring), longer than the Firebase Hosting
+  // proxy cap, so this submits a background job (POST /cases/render/jobs)
+  // instead of blocking one request. `jobId` is reset to null on every fresh
+  // attempt so a retry's stale poll result/error never lingers even a beat.
+  const [jobId, setJobId] = useState<string | null>(null);
+  const poll = usePollRenderJob(jobId);
 
   const start = useCallback(() => {
     if (!scene) return;
     setPhase(0);
+    setJobId(null);
     // Seal the AI→human approval receipt: send the frozen AI proposal + an honest
     // classification. The public demo is unauthenticated, so `interactive_demo`
     // is the truthful label (the server also enforces this).
@@ -33,14 +42,14 @@ export function RenderStep() {
       proposedScene: proposedScene ?? undefined,
       reviewClassification: "interactive_demo",
     };
-    render.mutate(
+    submitJob.mutate(
       scenario
         ? { scene, caseId, scenarioId: scenario.id, ...review }
         : { scene, caseId, files: photos.map((p) => p.file), roles: photos.map((p) => p.role), ...review },
-      { onSuccess: (res) => setResult(res) },
+      { onSuccess: (data) => setJobId(data.job_id) },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene, proposedScene, scenario, photos, caseId, setResult]);
+  }, [scene, proposedScene, scenario, photos, caseId]);
 
   useEffect(() => {
     if (fired.current) return;
@@ -48,25 +57,36 @@ export function RenderStep() {
     start();
   }, [start]);
 
-  // Cosmetic staged feedback while the single real request is in flight.
+  // The polled job landed a sealed case — hand off to the store, which also
+  // flips the wizard to the result step. Offline/demo generation can finish
+  // near-instantly, so this may fire from the very first poll tick.
   useEffect(() => {
-    if (render.isError || render.isSuccess) return;
+    if (!poll.result) return;
+    setResult(poll.result);
+  }, [poll.result, setResult]);
+
+  const isSuccess = poll.result !== null;
+  const error: Error | null = submitJob.isError ? submitJob.error : poll.error;
+
+  // Cosmetic staged feedback while the real request is in flight.
+  useEffect(() => {
+    if (error || isSuccess) return;
     const t = window.setInterval(() => setPhase((p) => Math.min(p + 1, STAGES.length - 1)), 1400);
     return () => window.clearInterval(t);
-  }, [render.isError, render.isSuccess]);
+  }, [error, isSuccess]);
 
   return (
     <div className="animate-fade-up py-8">
       <div className="mx-auto max-w-lg">
-        <div className={cn("sheet sheet-ticks p-6", !render.isError && "scanline")}>
+        <div className={cn("sheet sheet-ticks p-6", !error && "scanline")}>
           <h2 className="font-mono text-xl font-semibold text-blueprint-text">
-            {render.isError ? "Render failed" : "Sealing your case"}
+            {error ? "Render failed" : "Sealing your case"}
           </h2>
           <p className="mt-1 text-sm text-blueprint-dim">
             The schematic is deterministic; the illustration is generative and disclosed.
           </p>
 
-          {!render.isError && (
+          {!error && (
             <ol className="mt-5 space-y-2.5">
               {STAGES.map((label, i) => {
                 const done = i < phase;
@@ -92,13 +112,19 @@ export function RenderStep() {
             </ol>
           )}
 
-          {render.isError && (
+          {error && (
             <div className="mt-4">
               <p role="alert" className="flex items-center gap-2 rounded border border-red-400/30 bg-red-500/5 p-3 text-sm text-red-300">
-                <AlertCircle className="h-4 w-4" /> {render.error.message}
+                <AlertCircle className="h-4 w-4" /> {error.message}
               </p>
               <div className="mt-3 flex gap-2">
-                <Button size="sm" onClick={() => { render.reset(); start(); }}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    submitJob.reset();
+                    start();
+                  }}
+                >
                   Retry
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => goTo("review")}>

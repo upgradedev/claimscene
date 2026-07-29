@@ -184,6 +184,37 @@ export async function installApiMocks(page: Page): Promise<void> {
 
     if (pathname.endsWith("/cases/extract")) return route.fulfill(json(EXTRACT_RESPONSE));
     if (pathname.endsWith("/cases/preview-schematic")) return route.fulfill(json(PREVIEW_RESPONSE));
+
+    // Async submit + poll (POST /cases/render/jobs, GET /cases/render/jobs/{id})
+    // — the studio wizard's RenderStep uses this pair, never the synchronous
+    // POST /cases/render below. Both checks are matched by SUBSTRING (not
+    // endsWith) and placed ABOVE the generic `method === "GET"` fallback
+    // further down: a poll's URL ends in a job id, e.g.
+    // ".../cases/render/jobs/job-1", which does NOT satisfy
+    // `pathname.endsWith("/cases/render/jobs")` — falling through to that
+    // fallback would return the golden MANIFEST body instead of a job-status
+    // body, fail RenderJobStatusSchema parsing, and burn the poll loop's
+    // consecutive-error budget (a real bug caught before it shipped).
+    if (method === "POST" && pathname.endsWith("/cases/render/jobs")) {
+      // A brief, deterministic delay so the "Sealing your case" step is
+      // observable before it auto-advances to the sealed result — mirrors
+      // the synchronous /cases/render delay below.
+      return new Promise<void>((resolve) => {
+        setTimeout(() => resolve(route.fulfill({ status: 202, ...json({ job_id: "job-1", status: "queued" }) })), 700);
+      });
+    }
+    if (method === "GET" && pathname.includes("/cases/render/jobs/")) {
+      // Already "done" on the very first poll — offline/demo generation can
+      // finish near-instantly (see usePollRenderJob's first-tick-immediate
+      // behaviour), so the journey/a11y/responsive specs never need to wait
+      // out multiple poll intervals for the default path.
+      return route.fulfill(json({
+        job_id: "job-1", status: "done",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:05Z",
+        result: RENDER_RESPONSE,
+      }));
+    }
+
     if (pathname.endsWith("/cases/render")) {
       // A brief, deterministic delay so the "Sealing your case" step is
       // observable before it auto-advances to the sealed result.
@@ -201,4 +232,12 @@ export async function installApiMocks(page: Page): Promise<void> {
     }
     return route.fulfill({ status: 404, contentType: JSON_CT, body: "{}" });
   });
+
+  // Optional per-user multitenancy (GET /me/library, DELETE /me/data). No
+  // spec signs in today (isAuthEnabled() is false with no VITE_FIREBASE_*
+  // build vars — see lib/auth.ts), so these are never reached by the current
+  // suite; registered for completeness/forward-compat should a future spec
+  // mock lib/auth as enabled.
+  await page.route("**/me/library", (route) => route.fulfill(json({ cases: [] })));
+  await page.route("**/me/data", (route) => route.fulfill(json({ deleted: 0 })));
 }

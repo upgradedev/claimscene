@@ -7,6 +7,7 @@
 //     /scenarios and /cases to VITE_API_BASE (a local backend or Cloud Run).
 //   • Escape hatch: an absolute VITE_API_BASE is used verbatim.
 import { z } from "zod";
+import { getIdToken } from "./auth";
 import { SceneSchema, type Scene } from "./scene";
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
@@ -94,6 +95,30 @@ export const RenderResponseSchema = z.object({
 });
 export type RenderResponse = z.infer<typeof RenderResponseSchema>;
 
+// Async submit + poll (POST /cases/render/jobs / GET /cases/render/jobs/{job_id})
+// — the non-blocking counterpart to POST /cases/render for a caller that
+// cannot hold one request open for a multi-minute live render (see
+// claimscene.jobs on the backend). A job's terminal `result` is the IDENTICAL
+// shape as RenderResponse above, so the success/render path is shared with
+// the synchronous flow unchanged.
+export const RenderJobSubmitResponseSchema = z.object({
+  job_id: z.string(),
+  status: z.string(),
+});
+export type RenderJobSubmitResponse = z.infer<typeof RenderJobSubmitResponseSchema>;
+
+export const RenderJobStatusSchema = z.object({
+  job_id: z.string(),
+  status: z.enum(["queued", "running", "done", "failed"]),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  result: RenderResponseSchema.optional(),
+  // Exception CLASS NAME only when status is "failed" (see claimscene.jobs) —
+  // never prose, never a stack trace. The UI keeps this out of the headline.
+  error: z.string().optional(),
+});
+export type RenderJobStatus = z.infer<typeof RenderJobStatusSchema>;
+
 // The sealed AI→human approval receipt (review block) inside the manifest.
 export const ReviewDiffRowSchema = z.object({
   path: z.string(),
@@ -149,6 +174,20 @@ export const ManifestSchema = z.object({
 });
 export type Manifest = z.infer<typeof ManifestSchema>;
 
+// Optional per-user multitenancy (GET /me/library, DELETE /me/data — see
+// claimscene.api and lib/auth.ts). Both routes 401 for a guest caller; the UI
+// only ever calls them when signed in (see MyCases.tsx).
+export const LibraryCaseSchema = z.object({
+  case_id: z.string(),
+  manifest_hash: z.string().nullable(),
+  created_at: z.string().nullable(),
+});
+export type LibraryCase = z.infer<typeof LibraryCaseSchema>;
+
+const MyLibraryResponseSchema = z.object({ cases: z.array(LibraryCaseSchema) });
+
+const DeleteMyDataResponseSchema = z.object({ deleted: z.number().int() });
+
 // ── errors ───────────────────────────────────────────────────────────────────
 export class ApiError extends Error {
   constructor(
@@ -195,6 +234,37 @@ async function request<S extends z.ZodTypeAny>(
   return parsed.data;
 }
 
+/** Merges a fresh `Authorization: Bearer <id token>` into `headers` when a
+ *  user is signed in (see lib/auth.ts::getIdToken). Signed out, or auth
+ *  disabled on this build — the overwhelmingly common case, and the ONLY
+ *  case any test before this feature existed ever exercised — returns
+ *  `headers` completely UNCHANGED (same reference when a base was given, or
+ *  `undefined` when it wasn't), so every call below is byte-identical to its
+ *  pre-multitenancy fetch for a guest. Never caches the token: a fresh one is
+ *  requested on every single call.
+ *
+ *  The `| undefined` overload matters, not just the empty-object case: the
+ *  shared `request()` helper spreads `...init` AFTER `rawFetch`'s own default
+ *  headers, so an explicit-but-empty `init.headers` key would still clobber
+ *  the default `Accept` header a guest call relies on. Callers with no base
+ *  headers (submitRenderJob/getRenderJob/manifest/myLibrary/deleteMyData)
+ *  therefore omit the `headers` key entirely when there's no token — see
+ *  their `auth ? {...} : undefined` pattern below — not pass an empty object.
+ *
+ *  Only wired into the routes whose backend dependency (`get_tenant` in
+ *  claimscene.api) actually reads the tenant: render, submitRenderJob,
+ *  getRenderJob, manifest, myLibrary, deleteMyData. `extract` and
+ *  `previewSchematic` take no `tenant` parameter on the backend — they never
+ *  touch storage — so attaching a token there would cost a token fetch on
+ *  every review-loop edit for a header the server would just discard. */
+async function withAuth(
+  headers?: Record<string, string>,
+): Promise<Record<string, string> | undefined> {
+  const token = await getIdToken();
+  if (!token) return headers;
+  return { ...(headers ?? {}), Authorization: `Bearer ${token}` };
+}
+
 export interface ExtractRequest {
   scenarioId?: string;
   files?: File[];
@@ -215,6 +285,24 @@ export interface RenderRequest {
    *  `authenticated_human` to `interactive_demo`. */
   reviewClassification?: string;
   reviewerId?: string;
+}
+
+/** Build the multipart body shared by the sync (`POST /cases/render`) and
+ *  async (`POST /cases/render/jobs`) submit paths — both accept the IDENTICAL
+ *  form shape (see claimscene.api._prepare_render), so this is the one place
+ *  that shape is assembled. */
+function renderForm({ scene, caseId = "case", scenarioId, files = [], roles,
+                      proposedScene, reviewClassification, reviewerId }: RenderRequest): FormData {
+  const form = new FormData();
+  form.append("scene", JSON.stringify(scene));
+  form.append("case_id", caseId);
+  if (scenarioId) form.append("scenario_id", scenarioId);
+  if (roles?.length) form.append("roles", roles.join(","));
+  if (proposedScene) form.append("proposed_scene", JSON.stringify(proposedScene));
+  if (reviewClassification) form.append("review_classification", reviewClassification);
+  if (reviewerId) form.append("reviewer_id", reviewerId);
+  for (const file of files) form.append("files", file, file.name);
+  return form;
 }
 
 export const claimsceneApi = {
@@ -249,22 +337,73 @@ export const claimsceneApi = {
 
   /** Seal the reviewed scene into a full, verifiable case. When a proposed
    *  scene is supplied, the server seals an AI→human approval receipt. */
-  render({ scene, caseId = "case", scenarioId, files = [], roles,
-           proposedScene, reviewClassification, reviewerId }: RenderRequest): Promise<RenderResponse> {
-    const form = new FormData();
-    form.append("scene", JSON.stringify(scene));
-    form.append("case_id", caseId);
-    if (scenarioId) form.append("scenario_id", scenarioId);
-    if (roles?.length) form.append("roles", roles.join(","));
-    if (proposedScene) form.append("proposed_scene", JSON.stringify(proposedScene));
-    if (reviewClassification) form.append("review_classification", reviewClassification);
-    if (reviewerId) form.append("reviewer_id", reviewerId);
-    for (const file of files) form.append("files", file, file.name);
-    return request("/cases/render", RenderResponseSchema, { method: "POST", body: form });
+  async render(req: RenderRequest): Promise<RenderResponse> {
+    const auth = await withAuth();
+    return request("/cases/render", RenderResponseSchema, {
+      method: "POST",
+      body: renderForm(req),
+      ...(auth ? { headers: auth } : {}),
+    });
   },
 
   /** The parsed sealed manifest (provenance display). */
-  manifest(caseId: string): Promise<Manifest> {
-    return request(`/cases/${encodeURIComponent(caseId)}`, ManifestSchema);
+  async manifest(caseId: string): Promise<Manifest> {
+    const auth = await withAuth();
+    return request(
+      `/cases/${encodeURIComponent(caseId)}`,
+      ManifestSchema,
+      auth ? { headers: auth } : undefined,
+    );
+  },
+
+  /** Submit a case render as a background job (202 + job_id) instead of
+   *  blocking for the full two-step generation — the async counterpart to
+   *  `render`, for a caller that cannot hold one request open that long (see
+   *  claimscene.jobs on the backend). Same body shape as `render`. Poll the
+   *  result with `getRenderJob`. */
+  async submitRenderJob(req: RenderRequest): Promise<RenderJobSubmitResponse> {
+    const auth = await withAuth();
+    return request("/cases/render/jobs", RenderJobSubmitResponseSchema, {
+      method: "POST",
+      body: renderForm(req),
+      ...(auth ? { headers: auth } : {}),
+    });
+  },
+
+  /** Poll a submitted render job's status (queued/running/done/failed). A 404
+   *  (unknown job id) surfaces as an ApiError like any other failed request —
+   *  the caller's poll loop tolerates that the same as a transient failure. */
+  async getRenderJob(jobId: string): Promise<RenderJobStatus> {
+    const auth = await withAuth();
+    return request(
+      `/cases/render/jobs/${encodeURIComponent(jobId)}`,
+      RenderJobStatusSchema,
+      auth ? { headers: auth } : undefined,
+    );
+  },
+
+  /** The signed-in tenant's own cases (GET /me/library). Always attaches the
+   *  Authorization header — this route only makes sense for a signed-in
+   *  caller (401 for guest) and MyCases never calls it otherwise, but a
+   *  missing/expired token still surfaces as an honest ApiError(401) rather
+   *  than silently resolving as guest. */
+  async myLibrary(): Promise<LibraryCase[]> {
+    const auth = await withAuth();
+    const { cases } = await request(
+      "/me/library",
+      MyLibraryResponseSchema,
+      auth ? { headers: auth } : undefined,
+    );
+    return cases;
+  },
+
+  /** Erase every object under the signed-in tenant's own storage prefix
+   *  (DELETE /me/data). Returns the number of objects deleted. */
+  async deleteMyData(): Promise<{ deleted: number }> {
+    const auth = await withAuth();
+    return request("/me/data", DeleteMyDataResponseSchema, {
+      method: "DELETE",
+      ...(auth ? { headers: auth } : {}),
+    });
   },
 };

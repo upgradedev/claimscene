@@ -9,7 +9,7 @@ import path from "node:path";
 // proxy: the browser calls http://localhost:5173/scenarios and Vite forwards it
 // to VITE_API_BASE (a local backend or the Cloud Run URL). The app therefore
 // uses relative paths everywhere and needs no CORS.
-const API_ROUTES = ["/health", "/scenarios", "/cases"];
+const API_ROUTES = ["/health", "/scenarios", "/cases", "/me"];
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
