@@ -422,14 +422,16 @@ def check_genblaze_illustration_port_sealed() -> tuple[bool, str]:
     full provenance (provider/model/prompt/degraded) is sealed."""
     _storage, result = _standard_run()
     ill = result.manifest["illustration"]
-    for field_name in ("provider", "model", "prompt", "sha256", "degraded"):
+    for field_name in ("provider", "model", "prompt", "still_prompt", "sha256", "degraded"):
         if field_name not in ill:
             return False, f"illustration provenance missing {field_name!r}"
     if ill["degraded"] is not True:
         return False, "offline run must seal degraded=True"
-    marker = "not a real recording"
-    if marker not in ill["prompt"] or marker not in ill["still_prompt"]:
-        return False, "illustration prompt is not self-disclosing"
+    prompt_lower = ill["prompt"].lower()
+    still_lower = ill["still_prompt"].lower()
+    for marker in ("computer-generated", "not a real recording"):
+        if marker not in prompt_lower or marker not in still_lower:
+            return False, f"illustration prompt is not self-disclosing (missing {marker!r})"
     return True, "illustration sealed with provider/model/prompt + honest degraded flag"
 
 
