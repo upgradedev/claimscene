@@ -1,5 +1,5 @@
 {
-  "_comment": "Regenerates demo/assets/claimscene-07-architecture.png by patching only the two stale stat numbers in place. Source of truth for the numbers: the latest green CI run's pytest/vitest summary lines (see README.md '289 offline backend tests' / '126 frontend tests'). Run via: python scripts/patch_gallery_card.py demo/assets/src/claimscene-07-architecture.patch.json -- or push a change to this file and let .github/workflows/render-cards.yml do it.",
+  "_comment": "Regenerates demo/assets/claimscene-07-architecture.png by patching only the two stale stat numbers in place. Source of truth for the numbers: the latest green CI run's pytest/vitest summary lines (see README.md '289 offline backend tests' / '208 frontend tests'). Run via: python scripts/patch_gallery_card.py demo/assets/src/claimscene-07-architecture.patch.json -- or push a change to this file and let .github/workflows/render-cards.yml do it.",
   "base_image": "demo/assets/claimscene-07-architecture.png",
   "output_image": "demo/assets/claimscene-07-architecture.png",
   "font": "DejaVuSansMono-Bold",
@@ -15,9 +15,9 @@
       "ink_bottom_y": 593
     },
     {
-      "note": "frontend test count: 42 -> 126 (vitest summary, README.md:364)",
+      "note": "frontend test count: 126 -> 208 (vitest summary, README.md:364)",
       "erase_box": [192, 568, 254, 596],
-      "new_text": "126",
+      "new_text": "208",
       "anchor_left_x": 200,
       "ink_top_y": 574,
       "ink_bottom_y": 593
