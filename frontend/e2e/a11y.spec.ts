@@ -55,6 +55,26 @@ test("review step has no serious/critical a11y violations", async ({ page }) => 
   expect(await auditSeriousOrCritical(page, "review")).toEqual([]);
 });
 
+test("review step with a vehicle selected (rotate handle visible) has no serious/critical a11y violations", async ({
+  page,
+}) => {
+  // The default "review step" audit above never selects a vehicle, so the
+  // placement panel's rotate handle (and its dashed AI-proposed ghosts) are
+  // never in the tree it audits. Select one so those surfaces are covered too.
+  await page.goto("/");
+  await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+  await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
+  await page.getByRole("button", { name: /Extract scene/i }).click();
+  await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i })).toBeVisible();
+
+  const panel = page.getByRole("group", { name: /vehicle placement canvas/i });
+  const marker = panel.getByRole("button", { name: /^veh_a:/i });
+  await marker.click();
+  await expect(page.getByRole("button", { name: /^Rotate veh_a:/i })).toBeVisible();
+
+  expect(await auditSeriousOrCritical(page, "review-selected")).toEqual([]);
+});
+
 test("render step has no serious/critical a11y violations", async ({ page }) => {
   // Hold the render step open so it can be audited (it normally auto-advances).
   await page.route("**/cases/render", async (route) => {

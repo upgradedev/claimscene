@@ -55,4 +55,22 @@ describe("ReviewStep (human-in-the-loop centrepiece)", () => {
     const impacts = useCaseStore.getState().scene?.impacts ?? [];
     expect(impacts.some((i) => i.vehicle_id === "veh_b" && i.clock_position === 3)).toBe(true);
   });
+
+  it("the direct-manipulation placement panel is wired to the same scene as the dropdowns", () => {
+    render(<ReviewStep />);
+    // The panel renders alongside the dropdown-based editors, reading the same
+    // shared scene: veh_a's approach dropdown starts at "N" (emptyScene's
+    // default), and the placement panel's marker agrees.
+    const approachSelect = screen.getAllByLabelText("approach")[0] as HTMLSelectElement;
+    expect(approachSelect.value).toBe("N");
+    expect(screen.getByRole("button", { name: /^veh_a:.*north approach/i })).toBeInTheDocument();
+
+    // Changing the dropdown updates the SAME store the panel reads from — the
+    // two controls are two views onto one piece of state, not two copies.
+    fireEvent.change(approachSelect, { target: { value: "E" } });
+    expect(useCaseStore.getState().scene?.movements.find((m) => m.vehicle_id === "veh_a")?.approach).toBe(
+      "E",
+    );
+    expect(screen.getByRole("button", { name: /^veh_a:.*east approach/i })).toBeInTheDocument();
+  });
 });

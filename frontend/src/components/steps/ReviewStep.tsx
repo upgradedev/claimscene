@@ -32,6 +32,7 @@ import { Button } from "../ui/button";
 import { Field, Select, toOptions } from "../ui/fields";
 import { ClockPicker } from "../ClockPicker";
 import { SchematicPreview } from "../SchematicPreview";
+import { VehiclePlacementPanel } from "../VehiclePlacementPanel";
 import { StepHeading } from "./StepHeading";
 
 const LAYOUT_OPTS = toOptions(ROAD_LAYOUTS, humanize);
@@ -141,7 +142,10 @@ export function ReviewStep() {
 
         {/* ── live preview (sticky) ──────────────────────────────────── */}
         <div className="lg:sticky lg:top-20 lg:self-start">
-          <SchematicPreview scene={scene} proposedScene={proposedScene} />
+          <VehiclePlacementPanel scene={scene} proposedScene={proposedScene} onChange={update} />
+          <div className="mt-4">
+            <SchematicPreview scene={scene} proposedScene={proposedScene} />
+          </div>
           <div className="mt-4 flex flex-col gap-2">
             <Button
               size="lg"

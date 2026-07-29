@@ -89,6 +89,77 @@ test("reviewer completes the whole journey and every step becomes visible", asyn
   expect(await checkRows.count()).toBeGreaterThanOrEqual(14);
 });
 
+test("direct manipulation: drag to move, drag to rotate, and keyboard equivalents, on the placement panel", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+  await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
+  await page.getByRole("button", { name: /Extract scene/i }).click();
+  await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i })).toBeVisible();
+
+  const panel = page.getByRole("group", { name: /vehicle placement canvas/i });
+  await expect(panel).toBeVisible();
+  const marker = panel.getByRole("button", { name: /^veh_b:/i });
+  await expect(marker).toBeVisible();
+
+  // Both mock vehicles start at the north approach (see e2e/_mocks.ts) — drag
+  // veh_b's marker east and confirm ITS OWN dropdown (never veh_a's) updates.
+  // veh_a renders before veh_b (scene.vehicles order), so its "approach"
+  // combobox is the second on the page. getByRole("combobox", ...) rather
+  // than getByLabel: the marker button's own aria-label also contains the
+  // word "approach", and getByLabel matches any element with a matching
+  // accessible name, not just form controls.
+  const approachSelect = page.getByRole("combobox", { name: "approach" }).nth(1);
+  await expect(approachSelect).toHaveValue("N");
+
+  const markerBox = (await marker.boundingBox())!;
+  const markerCenter = { x: markerBox.x + markerBox.width / 2, y: markerBox.y + markerBox.height / 2 };
+  await page.mouse.move(markerCenter.x, markerCenter.y);
+  await page.mouse.down();
+  await page.mouse.move(markerCenter.x + 90, markerCenter.y, { steps: 8 });
+  await page.mouse.up();
+  await expect(approachSelect).toHaveValue("E");
+  // The live text readout in the panel agrees with the dropdown.
+  await expect(page.getByText(/veh_b: east approach/i)).toBeVisible();
+
+  // Click elsewhere on the canvas deselects (no rotate handle stays mounted).
+  await expect(page.getByRole("button", { name: /^Rotate veh_b:/i })).toBeVisible();
+  await panel.click({ position: { x: 4, y: 4 } });
+  await expect(page.getByRole("button", { name: /^Rotate veh_b:/i })).toHaveCount(0);
+
+  // Keyboard: focus the marker directly, re-select with Enter (no mouse),
+  // then move it with arrow keys — and it agrees with the dropdown too.
+  await marker.focus();
+  await page.keyboard.press("Enter");
+  await expect(marker).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("ArrowLeft");
+  await expect(approachSelect).toHaveValue("W");
+
+  // Rotate by dragging the dedicated handle around the marker's real center.
+  const handle = page.getByRole("button", { name: /^Rotate veh_b:/i });
+  await expect(handle).toBeVisible();
+  const handleBox = (await handle.boundingBox())!;
+  const markerBox2 = (await marker.boundingBox())!;
+  const center2 = { x: markerBox2.x + markerBox2.width / 2, y: markerBox2.y + markerBox2.height / 2 };
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(center2.x, center2.y + 90, { steps: 8 }); // straight down from center -> 6 o'clock
+  await page.mouse.up();
+
+  const clockGroup = page.getByRole("radiogroup", { name: /Impact clock position for veh_b/i });
+  await expect(clockGroup.getByRole("radio", { name: /6 o'clock/i })).toBeChecked();
+
+  // Keyboard rotate on the handle: "]" steps one further, to 7.
+  await handle.focus();
+  await page.keyboard.press("]");
+  await expect(clockGroup.getByRole("radio", { name: /7 o'clock/i })).toBeChecked();
+
+  // The dropdown/ClockPicker path still works independently and the panel
+  // agrees with it too (same shared scene, not a second copy).
+  const maneuverSelect = page.getByRole("combobox", { name: "maneuver" }).nth(1);
+  await maneuverSelect.selectOption({ label: "left turn" });
+  await expect(maneuverSelect).toHaveValue("left_turn");
+});
+
 test("extract shows a live progress affordance (elapsed timer + indeterminate bar)", async ({ page }) => {
   // Hold the extract in flight so the progress panel is observable (the shared
   // mock otherwise resolves instantly).
