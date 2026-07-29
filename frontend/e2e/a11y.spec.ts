@@ -77,7 +77,12 @@ test("review step with a vehicle selected (rotate handle visible) has no serious
 
 test("render step has no serious/critical a11y violations", async ({ page }) => {
   // Hold the render step open so it can be audited (it normally auto-advances).
-  await page.route("**/cases/render", async (route) => {
+  // The studio wizard submits an async render job (POST /cases/render/jobs),
+  // not the synchronous POST /cases/render — hold THAT route instead, then
+  // fall back to the default mock (installApiMocks, registered in
+  // beforeEach) so the submit still eventually resolves normally.
+  await page.route("**/cases/render/jobs", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
     await new Promise((r) => setTimeout(r, 4000));
     await route.fallback();
   });
