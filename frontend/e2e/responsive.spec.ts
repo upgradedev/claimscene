@@ -121,3 +121,60 @@ test("both hero CTAs show a visible focus ring under keyboard focus", async ({ p
   await ringVisible(page.getByRole("button", { name: /^Start a case/i }), "Start a case");
   await ringVisible(page.getByRole("button", { name: /Try a sample scenario/i }), "Try a sample scenario");
 });
+
+test("placement panel: marker + rotate handle are >=44px thumb targets and stay draggable-safe on mobile (375)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+  await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
+  await page.getByRole("button", { name: /Extract scene/i }).click();
+  await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i })).toBeVisible();
+
+  const panel = page.getByRole("group", { name: /vehicle placement canvas/i });
+  const marker = panel.getByRole("button", { name: /^veh_a:/i });
+  const atLeast44 = async (loc: Locator, name: string) => {
+    const box = await loc.boundingBox();
+    expect(box, `${name} has a box`).not.toBeNull();
+    expect(box!.width, `${name} width >=44 (got ${box!.width})`).toBeGreaterThanOrEqual(44);
+    expect(box!.height, `${name} height >=44 (got ${box!.height})`).toBeGreaterThanOrEqual(44);
+  };
+  await atLeast44(marker, "vehicle marker");
+
+  // Selecting reveals the rotate handle — also a thumb target, and both must
+  // ignore native touch-scroll gestures (touch-action: none) so a drag isn't
+  // hijacked by the page scrolling under the reviewer's thumb.
+  await marker.click();
+  const handle = page.getByRole("button", { name: /^Rotate veh_a:/i });
+  await atLeast44(handle, "rotate handle");
+
+  for (const loc of [marker, handle]) {
+    const touchAction = await loc.evaluate((el) => getComputedStyle(el).touchAction);
+    expect(touchAction).toBe("none");
+  }
+
+  await assertNoHorizontalOverflow(page, "review-with-vehicle-selected@375");
+});
+
+test("dragging a vehicle on the placement panel introduces no horizontal overflow on mobile (375)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+  await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
+  await page.getByRole("button", { name: /Extract scene/i }).click();
+  await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i })).toBeVisible();
+
+  const panel = page.getByRole("group", { name: /vehicle placement canvas/i });
+  const marker = panel.getByRole("button", { name: /^veh_a:/i });
+  const box = (await marker.boundingBox())!;
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.down();
+  await page.mouse.move(center.x + 60, center.y, { steps: 6 });
+  await page.mouse.up();
+
+  await assertNoHorizontalOverflow(page, "review-after-drag@375");
+});
