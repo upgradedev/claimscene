@@ -188,7 +188,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 pip install -e ".[server]"      # [server] adds the API (fastapi + multipart)
 
-pytest                          # 289 offline backend tests
+pytest                          # 290 offline backend tests
 python -m claimscene.cli --case demo --out out
 ```
 
@@ -353,7 +353,7 @@ desynced or over-length video fails the build.
 
 ## Testing & CI
 
-- **289 offline backend tests** (unit / integration / e2e): schema
+- **290 offline backend tests** (unit / integration / e2e): schema
   round-trips and rejection of hallucinated fields, layout determinism and
   contact-geometry properties, golden-file SVG, provenance seal/tamper, real
   B2 adapter against an S3 stub (**+ a presign contract test asserting SigV4 +
@@ -362,7 +362,7 @@ desynced or over-length video fails the build.
   SDK-boundary contract tests, and the **full API chain** through FastAPI's
   TestClient (extract → preview → render → get → verify → playback, honest
   degrade, path sanitisation, 422s).
-- **126 frontend tests** (Vitest): the review-panel edit logic, the
+- **208 frontend tests** (Vitest): the review-panel edit logic, the
   schematic-preview live-update wiring, the ReviewStep centrepiece render, the
   **ExtractProgress** extract-latency UI, the playback-url selection, and the
   in-browser verify pinned to a **golden manifest produced by the real backend**
