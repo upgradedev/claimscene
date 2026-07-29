@@ -203,6 +203,14 @@ class InMemoryStorage:
     def exists(self, key: str) -> bool:
         return key in self._objects
 
+    def delete(self, key: str) -> None:
+        """Remove ``key`` (and its index row). Deleting an absent key is a
+        no-op — DELETE is idempotent, matching real S3/B2 semantics. Added
+        for multitenancy's ``DELETE /me/data`` (see ``claimscene.api``'s
+        ``delete_my_data`` / ``_TenantScopedStorage``)."""
+        self._objects.pop(key, None)
+        self.index = [row for row in self.index if row["key"] != key]
+
     def reload_index(self) -> list[dict]:
         return self.index
 
