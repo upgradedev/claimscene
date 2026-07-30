@@ -1,7 +1,27 @@
-from claimscene.adapters.fakes import _scene_left_cross, _scene_rear_end
+from claimscene.adapters.fakes import (
+    _scene_left_cross,
+    _scene_parking_reverse,
+    _scene_rear_end,
+    _scene_roundabout_sideswipe,
+)
 from claimscene.layout import LayoutEngine
 from claimscene.provenance import DISCLOSURE
-from claimscene.report import build_report, illustration_prompt, illustration_still_prompt
+from claimscene.report import (
+    _contact_phrase,
+    _idiom_phrase,
+    build_report,
+    illustration_prompt,
+    illustration_still_prompt,
+)
+from claimscene.scene import (
+    DamageSeverity,
+    DamageZone,
+    Impact,
+    Movement,
+    Road,
+    SceneGraph,
+    Vehicle,
+)
 
 
 def test_report_is_deterministic_and_carries_disclosure():
@@ -38,9 +58,9 @@ def test_report_includes_confidence_notes_and_extras():
 
 def test_illustration_prompt_deterministic_and_self_disclosing():
     scene = _scene_left_cross()
-    a = illustration_prompt(scene)
-    assert a == illustration_prompt(scene)
-    assert DISCLOSURE in a
+    timeline = LayoutEngine().build(scene)
+    a = illustration_prompt(scene, timeline)
+    assert a == illustration_prompt(scene, timeline)
     assert "silver car" in a and "green van" in a
     assert "not a real recording" in a
 
@@ -51,9 +71,11 @@ def test_prompts_stay_in_the_moderation_safe_forensic_register():
     generative model must not be nudged toward looking like a real
     recording)."""
     scene = _scene_rear_end()
+    timeline = LayoutEngine().build(scene)
     forbidden = ("photorealistic", "photograph", "dashcam", "real footage",
                 "cinematic film still", "documentary footage")
-    for prompt in (illustration_still_prompt(scene), illustration_prompt(scene)):
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
         assert "Computer-generated 3D forensic accident-reconstruction render" in prompt
         assert "no people, no injuries" in prompt
         assert "not a real recording" in prompt
@@ -64,8 +86,311 @@ def test_prompts_stay_in_the_moderation_safe_forensic_register():
 
 def test_still_prompt_describes_vehicles_and_damage():
     scene = _scene_rear_end()
-    a = illustration_still_prompt(scene)
-    assert a == illustration_still_prompt(scene)
+    timeline = LayoutEngine().build(scene)
+    a = illustration_still_prompt(scene, timeline)
+    assert a == illustration_still_prompt(scene, timeline)
     assert "blue car" in a and "red car" in a
     assert "crush mark at its 6 o'clock (rear)" in a
-    assert DISCLOSURE not in a  # the overlay instruction belongs to the clip
+    # The disclosure is burned into the pixels (watermark.py) rather than
+    # requested in either generation prompt now -- see the no-on-image-text
+    # tests below.
+    assert DISCLOSURE not in a
+
+
+# ── impact-geometry relational phrasing ──────────────────────────────────────
+# These fixtures cover three distinct geometries straight out of the real
+# LayoutEngine: rear_end is aligned (nose to tail), parking_reverse and
+# roundabout_sideswipe are both perpendicular (meeting at right angles, from
+# two different scenarios), and left_cross is oblique. The expected sentences
+# were verified against the LayoutEngine's actual computed poses (not
+# hand-guessed): same math the schematic itself is drawn from.
+def test_illustration_prompts_state_rear_end_geometry():
+    scene = _scene_rear_end()
+    timeline = LayoutEngine().build(scene)
+    expected = (
+        "The red car is directly behind the blue car, nose to tail, both "
+        "facing the same way, in contact at the point of impact."
+    )
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        assert expected in prompt
+
+
+def test_illustration_prompts_state_right_angle_geometry():
+    scene = _scene_parking_reverse()
+    timeline = LayoutEngine().build(scene)
+    expected = (
+        "The white van is directly to the left of the black car, meeting "
+        "at right angles, in contact at the point of impact."
+    )
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        assert expected in prompt
+
+
+def test_illustration_prompts_state_right_angle_geometry_second_fixture():
+    scene = _scene_roundabout_sideswipe()
+    timeline = LayoutEngine().build(scene)
+    expected = (
+        "The black motorcycle is ahead and to the right of the yellow car, "
+        "meeting at right angles, in contact at the point of impact."
+    )
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        assert expected in prompt
+
+
+def test_illustration_prompts_state_oblique_geometry():
+    scene = _scene_left_cross()
+    timeline = LayoutEngine().build(scene)
+    expected = (
+        "The green van is ahead and to the right of the silver car, "
+        "meeting at an oblique angle, in contact at the point of impact."
+    )
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        assert expected in prompt
+
+
+def _scene_head_on() -> SceneGraph:
+    """Two cars approaching from opposite ends of the same straight road,
+    both struck at their own front (12 o'clock): the fourth orientation
+    bucket (the other three are covered by the fixtures above) and the
+    "nose to nose" idiom, which none of the committed fixtures exercise."""
+    return SceneGraph(
+        road=Road(layout="straight", lanes_per_direction=1, signal="none"),
+        vehicles=[
+            Vehicle(id="veh_a", kind="car", color="blue", damage=[
+                DamageZone(clock_position=12, severity=DamageSeverity.crush),
+            ]),
+            Vehicle(id="veh_b", kind="car", color="red", damage=[
+                DamageZone(clock_position=12, severity=DamageSeverity.crush),
+            ]),
+        ],
+        movements=[
+            Movement(vehicle_id="veh_a", approach="N", maneuver="straight",
+                     speed_band="moderate"),
+            Movement(vehicle_id="veh_b", approach="S", maneuver="straight",
+                     speed_band="moderate"),
+        ],
+        impacts=[
+            Impact(vehicle_id="veh_a", clock_position=12),
+            Impact(vehicle_id="veh_b", clock_position=12),
+        ],
+    )
+
+
+def test_illustration_prompts_state_head_on_geometry():
+    scene = _scene_head_on()
+    timeline = LayoutEngine().build(scene)
+    expected = (
+        "The red car is directly ahead of the blue car, nose to nose, "
+        "facing each other head-on, in contact at the point of impact."
+    )
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        assert expected in prompt
+
+
+def test_impact_geometry_wording_is_deterministic():
+    """Two independently-built Timelines from the same scene must yield the
+    exact same relational wording (not just the same object reused)."""
+    scene = _scene_rear_end()
+    a = illustration_prompt(scene, LayoutEngine().build(scene))
+    b = illustration_prompt(scene, LayoutEngine().build(scene))
+    assert a == b
+    a_still = illustration_still_prompt(scene, LayoutEngine().build(scene))
+    b_still = illustration_still_prompt(scene, LayoutEngine().build(scene))
+    assert a_still == b_still
+
+
+def test_illustration_prompts_instruct_no_on_image_text():
+    """The model must be told not to render its own captions -- it used to
+    invent on-image labels (e.g. "BLUE CAR: 6 O'CLOCK (REAR) DENT") that
+    compete with the deterministic disclosure burned into the pixels after
+    generation (watermark.py)."""
+    scene = _scene_rear_end()
+    timeline = LayoutEngine().build(scene)
+    expected = "no text, no labels, no captions, and no watermarks"
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        assert expected in prompt
+
+
+def test_illustration_prompt_drops_the_contradictory_overlay_request():
+    """The old ``Overlay text: '...'`` request asked the model to render
+    text; that now directly contradicts the no-text instruction above, so it
+    was removed rather than left in to confuse the model. The disclosure
+    string itself must not appear in either prompt any more -- only in the
+    manifest and the burned-in pixels."""
+    scene = _scene_rear_end()
+    timeline = LayoutEngine().build(scene)
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        assert "Overlay text" not in prompt
+        assert DISCLOSURE not in prompt
+
+
+# ── graceful degradation: no pair to relate ───────────────────────────────────
+def _scene_single_vehicle() -> SceneGraph:
+    return SceneGraph(
+        road=Road(layout="parking_lot", lanes_per_direction=1, signal="none"),
+        vehicles=[Vehicle(id="veh_a", kind="car", color="blue")],
+    )
+
+
+def _scene_two_parked_no_impact() -> SceneGraph:
+    return SceneGraph(
+        road=Road(layout="parking_lot", lanes_per_direction=1, signal="none"),
+        vehicles=[
+            Vehicle(id="veh_a", kind="car", color="blue"),
+            Vehicle(id="veh_b", kind="car", color="red"),
+        ],
+        movements=[
+            Movement(vehicle_id="veh_a", approach="N", maneuver="parked",
+                     speed_band="stopped"),
+            Movement(vehicle_id="veh_b", approach="N", maneuver="parked",
+                     speed_band="stopped"),
+        ],
+    )
+
+
+def _scene_moving_no_impact() -> SceneGraph:
+    return SceneGraph(
+        road=Road(layout="straight", lanes_per_direction=1, signal="none"),
+        vehicles=[
+            Vehicle(id="veh_a", kind="car", color="blue"),
+            Vehicle(id="veh_b", kind="car", color="red"),
+        ],
+        movements=[
+            Movement(vehicle_id="veh_a", approach="N", maneuver="straight",
+                     speed_band="low"),
+            Movement(vehicle_id="veh_b", approach="S", maneuver="straight",
+                     speed_band="low"),
+        ],
+    )
+
+
+def _assert_no_relationship_claimed(prompt: str) -> None:
+    """No relational clause was invented: the two telltale fragments that
+    only the relationship sentence ever emits (an orientation clause and a
+    contact clause) are absent, while the rest of the forensic register is
+    still intact."""
+    assert "meeting at" not in prompt
+    assert "facing" not in prompt
+    assert "point of impact" not in prompt
+    assert "Computer-generated 3D forensic accident-reconstruction render" in prompt
+    assert "no text, no labels, no captions, and no watermarks" in prompt
+
+
+def test_illustration_prompts_handle_single_vehicle_scene():
+    scene = _scene_single_vehicle()
+    timeline = LayoutEngine().build(scene)
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        _assert_no_relationship_claimed(prompt)
+        assert "blue car" in prompt
+
+
+def test_illustration_prompts_handle_parked_only_scene():
+    scene = _scene_two_parked_no_impact()
+    timeline = LayoutEngine().build(scene)
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        _assert_no_relationship_claimed(prompt)
+        assert "blue car" in prompt and "red car" in prompt
+
+
+def test_illustration_prompts_handle_scene_with_no_impacts():
+    scene = _scene_moving_no_impact()
+    timeline = LayoutEngine().build(scene)
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        _assert_no_relationship_claimed(prompt)
+        assert "blue car" in prompt and "red car" in prompt
+
+
+def test_illustration_prompt_ignores_a_timeline_from_a_different_scene():
+    """A caller bug -- passing a Timeline that shares no vehicle ids with the
+    scene -- must degrade to "nothing claimed", never crash. This is the
+    scenario ``_impact_pose`` and ``_impact_relationship_phrase`` are
+    defensive about."""
+    scene = _scene_rear_end()
+    disjoint = SceneGraph(
+        road=Road(layout="parking_lot", lanes_per_direction=1, signal="none"),
+        vehicles=[Vehicle(id="unrelated_vehicle", kind="car", color="green")],
+    )
+    disjoint_timeline = LayoutEngine().build(disjoint)
+    for prompt in (illustration_still_prompt(scene, disjoint_timeline),
+                   illustration_prompt(scene, disjoint_timeline)):
+        _assert_no_relationship_claimed(prompt)
+        assert "blue car" in prompt and "red car" in prompt
+
+
+def test_illustration_prompt_dedupes_a_vehicle_struck_twice():
+    """A vehicle sandwiched in a chain collision can legitimately appear
+    twice in ``scene.impacts`` (front hit, then rear hit). The relationship
+    phrase must describe it once, relative to the other participant --
+    never a nonsensical self-relationship."""
+    scene = SceneGraph(
+        road=Road(layout="straight", lanes_per_direction=1, signal="none"),
+        vehicles=[
+            Vehicle(id="veh_a", kind="car", color="blue", damage=[
+                DamageZone(clock_position=12, severity=DamageSeverity.dent),
+                DamageZone(clock_position=6, severity=DamageSeverity.dent),
+            ]),
+            Vehicle(id="veh_b", kind="car", color="red", damage=[
+                DamageZone(clock_position=6, severity=DamageSeverity.crush),
+            ]),
+        ],
+        movements=[
+            Movement(vehicle_id="veh_a", approach="N", maneuver="straight",
+                     speed_band="stopped"),
+            Movement(vehicle_id="veh_b", approach="N", maneuver="straight",
+                     speed_band="moderate"),
+        ],
+        impacts=[
+            Impact(vehicle_id="veh_a", clock_position=12),
+            Impact(vehicle_id="veh_a", clock_position=6),
+            Impact(vehicle_id="veh_b", clock_position=6),
+        ],
+    )
+    timeline = LayoutEngine().build(scene)
+    for prompt in (illustration_still_prompt(scene, timeline),
+                   illustration_prompt(scene, timeline)):
+        # Exactly one relational sentence: "blue car" never appears as the
+        # subject of an "is ... the blue car" clause about itself.
+        assert prompt.count(" the blue car,") == 1
+        assert "the blue car is" not in prompt.lower()
+        assert "in contact at the point of impact" in prompt
+
+
+# ── direct coverage of the small pure helpers' remaining branches ────────────
+# The four fixture-driven geometries above cannot reach every branch: the
+# real LayoutEngine always puts impact participants in contact (see
+# ``test_layout.test_impact_points_touch_at_contact_frame``), so "almost
+# touching" and "too far to claim contact" never occur from real poses, and
+# no committed fixture happens to combine a "directly ahead of/behind"
+# position with a perpendicular or oblique orientation. These two pure
+# functions are total (no branch depends on anything but their arguments),
+# so testing them directly is a faithful, white-box check of the same logic
+# the fixture-driven tests exercise end to end.
+def test_contact_phrase_buckets():
+    assert _contact_phrase(None) is None
+    assert _contact_phrase(0.0) == "in contact at the point of impact"
+    assert _contact_phrase(1.0) == "in contact at the point of impact"
+    assert _contact_phrase(2.0) == "almost touching"
+    assert _contact_phrase(3.0) == "almost touching"
+    assert _contact_phrase(3.1) is None
+
+
+def test_idiom_phrase_only_fires_for_aligned_ahead_or_behind():
+    assert _idiom_phrase("directly ahead of", "both facing the same way") == "nose to tail"
+    assert _idiom_phrase("directly behind", "both facing the same way") == "nose to tail"
+    assert _idiom_phrase("directly ahead of", "facing each other head-on") == "nose to nose"
+    assert _idiom_phrase("directly behind", "facing each other head-on") == "nose to nose"
+    # Same position, but an orientation neither idiom fits.
+    assert _idiom_phrase("directly ahead of", "meeting at right angles") is None
+    assert _idiom_phrase("directly behind", "meeting at an oblique angle") is None
+    # A position that is never idiomatic, regardless of orientation.
+    assert _idiom_phrase("directly to the left of", "both facing the same way") is None

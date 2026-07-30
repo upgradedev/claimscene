@@ -149,23 +149,28 @@ class CasePipeline:
         # 5. Illustration (generative, explicitly sealed as such), two steps:
         #    an establish-shot still, then an image-to-video clip chained from
         #    that still (the provider reuses the still's hosted URL live).
-        #    ``illustration_prompt`` already ASKS the model to overlay the
-        #    disclosure text, but that is a request, not a guarantee (a live
-        #    render proved the model can simply ignore it) -- so the
-        #    disclosure is additionally burned into the actual pixels here,
-        #    deterministically, after generation (see watermark.py). The RAW
-        #    (unwatermarked) still bytes are what feed the video step, so the
-        #    Genblaze provider's chained-output optimisation (same sha256 ->
-        #    same hosted URL, see GenblazeMediaProvider._hosted_by_sha) still
-        #    matches live; only the STORED/SEALED copies are watermarked.
-        still_prompt = illustration_still_prompt(scene)
+        #    Both prompts are built from ``scene`` AND ``timeline`` -- the
+        #    Timeline's already-computed poses at the impact frame give the
+        #    prompt the real relative position/orientation between impact
+        #    participants, so the illustration matches the schematic instead
+        #    of the model inventing its own layout. The prompts also now ask
+        #    for no on-image text -- the disclosure is guaranteed instead by
+        #    burning it into the actual pixels here, deterministically, after
+        #    generation (see watermark.py; a live render proved a prompt
+        #    request alone is not a guarantee, the model can simply ignore
+        #    it). The RAW (unwatermarked) still bytes are what feed the video
+        #    step, so the Genblaze provider's chained-output optimisation
+        #    (same sha256 -> same hosted URL, see
+        #    GenblazeMediaProvider._hosted_by_sha) still matches live; only
+        #    the STORED/SEALED copies are watermarked.
+        still_prompt = illustration_still_prompt(scene, timeline)
         still_raw = self.provider.generate(
             model=spec.illustration_still_model, prompt=still_prompt,
             modality="image",
             params={"size": "2K", "output_format": "png", "max_images": 1,
                     "watermark": False},
         )
-        prompt = illustration_prompt(scene)
+        prompt = illustration_prompt(scene, timeline)
         illustration_raw = self.provider.generate(
             model=spec.illustration_model, prompt=prompt, modality="video",
             inputs=[still_raw],
