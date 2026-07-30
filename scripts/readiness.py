@@ -649,6 +649,60 @@ def check_honest_watermark_every_layer() -> tuple[bool, str]:
     return True, "watermark + disclosure present in schematic, manifest and report"
 
 
+def check_honest_illustration_watermark_burned() -> tuple[bool, str]:
+    """The illustration disclosure is burned into the pixels after
+    generation, not merely requested in the prompt — a live render on
+    2026-07-30 (case ``live-forensic-retry-0bb32eeb``, degraded=False) proved
+    the prompt-only instruction is not reliable: the model ignored it.
+
+    Drives the REAL burn-in functions (not a mock): a genuine Pillow still
+    burn succeeds end-to-end and visibly changes the bytes; the fail-safe
+    path is exercised with genuinely undecodable input for both the still
+    and the clip burner and must return the ORIGINAL bytes unchanged with an
+    honest ``burned=False`` (never raise, never silently claim success); and
+    a full offline pipeline run structurally seals the watermark text + both
+    burned flags into the manifest. (The clip burner's real-success path
+    needs ffmpeg and is proven in the pytest integration suite instead — this
+    gate never depends on ffmpeg, matching every other check here.)"""
+    import io as _io
+
+    from PIL import Image as _Image
+
+    from claimscene.watermark import burn_clip_watermark, burn_still_watermark
+
+    buf = _io.BytesIO()
+    _Image.new("RGB", (64, 48), (40, 90, 140)).save(buf, format="PNG")
+    real_still = buf.getvalue()
+    still_result = burn_still_watermark(real_still)
+    if not still_result.burned or still_result.error is not None:
+        return False, f"real still burn-in did not succeed: {still_result.error}"
+    if still_result.data == real_still:
+        return False, "still burn-in reported success but bytes are unchanged"
+
+    garbage = b"not a real media file"
+    for burn, label in ((burn_still_watermark, "still"), (burn_clip_watermark, "clip")):
+        result = burn(garbage)
+        if result.burned:
+            return False, f"{label} burner claimed success on undecodable input"
+        if result.data != garbage:
+            return False, f"{label} burner altered the bytes despite failing"
+        if not result.error:
+            return False, f"{label} burner failed silently (no error recorded)"
+
+    from claimscene.provenance import DISCLOSURE
+
+    _storage, result = _standard_run()
+    ill = result.manifest["illustration"]
+    if ill.get("watermark_text") != DISCLOSURE:
+        return False, "illustration.watermark_text missing or not the sealed disclosure"
+    for field_name in ("watermark_burned", "still_watermark_burned"):
+        if not isinstance(ill.get(field_name), bool):
+            return False, f"illustration.{field_name} not sealed as an explicit boolean"
+    return True, ("real Pillow still burn-in verified byte-changing; fail-safe on "
+                  "undecodable input returns original bytes + honest burned=False "
+                  "for both burners; pipeline seals watermark_text + both burned flags")
+
+
 def check_honest_source_attribution_sealed() -> tuple[bool, str]:
     from claimscene.provenance import verify_manifest
 
@@ -924,6 +978,10 @@ def build_criteria() -> list[Criterion]:
             Check("honest_media.watermark_every_layer",
                   "Watermark + disclosure on schematic, manifest and report",
                   2, run=check_honest_watermark_every_layer),
+            Check("honest_media.illustration_watermark_burned",
+                  "Illustration disclosure burned into pixels, not just requested "
+                  "in the prompt; fail-safe never ships a false positive",
+                  3, run=check_honest_illustration_watermark_burned),
             Check("honest_media.source_attribution_sealed",
                   "Per-input source/attribution sealed; re-badging detected",
                   2, run=check_honest_source_attribution_sealed),
