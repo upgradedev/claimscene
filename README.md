@@ -30,12 +30,14 @@ every case into two layers and never lets them blur:
    (enums, clock positions, speed *bands* — never coordinates). Deterministic
    code turns that into geometry, an animated schematic, and a report. Same
    input, same bytes, every time.
-2. **The illustration layer.** A generative establish-shot still plus a
-   short video clip chained from it, both prompted in a deliberately
-   computer-generated forensic-reconstruction register that states plainly
-   it is not a real recording, watermarked in the prompt and sealed in the
-   manifest as an illustration. The `degraded` flag honestly records
-   whether a real provider generated them.
+2. **The illustration layer.** A short video clip animating the case's own
+   deterministic schematic: the seed image is a raster of that schematic
+   (the impact-frame render), not a generated still, so the clip's geometry
+   is inherited from the factual layer instead of invented. Prompted in a
+   deliberately computer-generated forensic-reconstruction register that
+   states plainly it is not a real recording, watermarked deterministically
+   after generation and sealed in the manifest as an illustration. The
+   `degraded` flag honestly records whether a real provider generated it.
 
 A tamper-evident manifest chains both layers, every input photo (with its
 `source`, `attribution`, and `license`), and every hash. Re-badge a licensed
@@ -83,7 +85,7 @@ flowchart LR
     PIPE --- RD{{"Renderer port"}}
     VE -->|"CLAIMSCENE_MODE=live"| VEL["VlmExtractor — model ladder<br/>gemma-4-31b-it → gemini-3.5-flash →<br/>Nebius Qwen2.5-VL · strict JSON ·<br/>1 repair round-trip on validation errors"]
     VE -->|"otherwise — CI / offline demo"| VEF["FakeVisionExtractor<br/>deterministic scene fixtures<br/>from input hashes"]
-    MP -->|"live (Genblaze SDK + GMI Cloud)"| MPL["GenblazeMediaProvider<br/>seedream still → pixverse/Kling clip<br/>(still's hosted URL chains into the clip)"]
+    MP -->|"live (Genblaze SDK + GMI Cloud)"| MPL["GenblazeMediaProvider<br/>schematic raster seed → pixverse/Kling clip<br/>(seed hosted through the B2 backend)"]
     MP -->|"otherwise"| MPF["FakeMediaProvider<br/>deterministic bytes"]
     SB -->|"live + boto3 + B2 creds"| B2S["B2Storage — boto3, S3-compatible<br/>durable index.jsonl (multi-instance safe)"]
     SB -->|"otherwise"| IMS["InMemoryStorage<br/>identical index surface"]
@@ -251,17 +253,27 @@ accepted): `B2_BUCKET_NAME`, `B2_S3_ENDPOINT`, `B2_APPLICATION_KEY_ID`,
 ## How Genblaze is used
 
 Illustration generation runs through a real Genblaze `Pipeline`, not a
-prompt-and-hope call: an establish-shot still (`seedream-5.0-lite`) renders
-first, and its hosted output URL chains directly into an image-to-video clip
-step (`pixverse-v6-i2v` by default, `Kling-Image2Video-V2.1-Master` as a
-premium option) as that step's input — no self-hosting round-trip. With a
-storage backend attached, Genblaze's `ObjectStorageSink` persists every
-generated asset straight to Backblaze B2 and seals its own per-asset SHA-256.
-The adapter re-verifies each returned
-asset's bytes against that seal before ClaimScene re-hashes them and folds
-the same digest into its own case-level manifest (`illustration.sha256`,
-`illustration.still_sha256`) — the illustration's provenance is anchored
-twice, and a mismatch raises instead of silently shipping tampered bytes.
+prompt-and-hope call: a single image-to-video clip step (`pixverse-v6-i2v`
+by default, `Kling-Image2Video-V2.1-Master` as a premium option), seeded by
+a raster of the case's own deterministic schematic, not a generated
+establish-shot still. An earlier version of ClaimScene generated that still
+with `seedream-5.0-lite` first and chained its hosted output URL straight
+into the clip step; a live render on 2026-07-30 showed prompt text alone
+cannot pin a diffusion model's geometry (a stated rear-end collision came
+back head-on), so the seed is now the schematic raster itself, hosted
+through the storage backend under a content-addressed `chain-inputs/` key
+(the old same-instance URL-chaining shortcut no longer applies, since
+nothing generates the seed any more). With a storage backend attached,
+Genblaze's `ObjectStorageSink` persists the generated clip straight to
+Backblaze B2 and seals its own per-asset SHA-256. The adapter re-verifies
+the returned asset's bytes against that seal before ClaimScene re-hashes
+them and folds the same digest into its own case-level manifest
+(`illustration.sha256`): the clip's provenance is anchored twice, and a
+mismatch raises instead of silently shipping tampered bytes. The seed
+raster's own provenance is sealed separately and just as honestly
+(`illustration.still_model: null`, `illustration.still_source:
+"schematic:impact_frame"`, `illustration.still_sha256`): it names the
+deterministic renderer that produced it, never a generative model.
 
 The SDK-boundary lesson came from Cinemory, our other MIT entry that shares
 this adapter foundation: the real Genblaze SDK's own mock provider does no
@@ -283,8 +295,8 @@ fails this contract test in CI, not a live demo.
 | Stage | Live (`CLAIMSCENE_MODE=live`) | Offline (default, CI) |
 |---|---|---|
 | Scene extraction (VLM ladder) | GMI `google/gemma-4-31b-it` (primary) → GMI `google/gemini-3.5-flash` (fallback) → Nebius `Qwen/Qwen2.5-VL-72B-Instruct` (independent-provider fallback) | `FakeVisionExtractor` (deterministic fixtures) |
-| Establish-shot still | `seedream-5.0-lite` via Genblaze + GMI Cloud | `FakeMediaProvider` (deterministic bytes) |
-| Illustration clip (image-to-video from the still) | `pixverse-v6-i2v` (default) or `Kling-Image2Video-V2.1-Master` (premium) via Genblaze + GMI Cloud | `FakeMediaProvider` (deterministic bytes) |
+| Illustration seed (top-down schematic raster) | none, deterministic `PillowSchematicRenderer` (same code path in both modes) | same code (no model call) |
+| Illustration clip (image-to-video from the schematic seed) | `pixverse-v6-i2v` (default) or `Kling-Image2Video-V2.1-Master` (premium) via Genblaze + GMI Cloud | `FakeMediaProvider` (deterministic bytes) |
 | Schematic + layout + report | none — deterministic code by design | same code (no LLM anywhere) |
 
 The ladder falls through on rate limits and transport errors (retry with
@@ -474,7 +486,10 @@ Done (live, verified 2026-07-23): the container is **deployed to Cloud Run** at
 a public URL, and the **`claimscene` B2 bucket** with a write-entitled, scoped
 application key is provisioned. A live case render ran end to end against it
 (`storage=B2Storage`), writing real objects — including a seedream establishing
-still and a pixverse illustration clip — to the bucket.
+still and a pixverse illustration clip, to the bucket (that still-generation
+step was replaced by the schematic-seeded illustration described in "How
+Genblaze is used" above; this entry is a historical record of that date's
+mechanism, not the current one).
 
 Remaining (user-gated): the optional premium clip path
 (`Kling-Image2Video-V2.1-Master`) exposed in the UI.

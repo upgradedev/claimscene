@@ -49,20 +49,26 @@ def _tiny_clip() -> bytes:
 
 
 class _RealMediaProvider:
-    """Returns genuinely decodable still/clip bytes, deliberately NOT
-    "fake"-prefixed (so the pipeline seals ``degraded=False``, exercising the
-    live/non-degraded illustration-watermark requirement)."""
+    """Returns genuinely decodable clip bytes, deliberately NOT "fake"-
+    prefixed (so the pipeline seals ``degraded=False``, exercising the
+    live/non-degraded illustration-watermark requirement).
+
+    Only a video/clip call reaches this double now: the establish-shot still
+    step is gone (see pipeline.py step 5) -- the clip's input image is the
+    pipeline's own deterministic schematic raster, never anything this
+    provider returns. ``calls``/``video_inputs`` record exactly what this
+    double actually saw.
+    """
 
     name = "test-real-media"
 
-    def __init__(self, still: bytes, clip: bytes) -> None:
-        self._still = still
+    def __init__(self, clip: bytes) -> None:
         self._clip = clip
+        self.calls: list[str] = []
         self.video_inputs: list[bytes] | None = None
 
     def generate(self, *, model, prompt, modality="video", inputs=None, params=None):
-        if modality == "image":
-            return self._still
+        self.calls.append(modality)
         self.video_inputs = inputs
         return self._clip
 
@@ -76,10 +82,9 @@ def photos() -> list[CasePhoto]:
 @needs_ffmpeg
 @pytest.mark.ffmpeg
 def test_pipeline_seals_the_post_overlay_bytes_for_still_and_clip(photos):
-    still_raw = _tiny_png((10, 20, 30))
     clip_raw = _tiny_clip()
     storage = InMemoryStorage(bucket="wm-int")
-    provider = _RealMediaProvider(still_raw, clip_raw)
+    provider = _RealMediaProvider(clip_raw)
     pipeline = CasePipeline(FakeVisionExtractor(), provider, storage,
                             renderer=PillowSchematicRenderer(animate=False))
 
@@ -95,17 +100,20 @@ def test_pipeline_seals_the_post_overlay_bytes_for_still_and_clip(photos):
     assert ill["still_watermark_burned"] is True
     assert ill["still_watermark_error"] is None
 
-    # The RAW (pre-burn) still bytes are what fed the video-generation step --
-    # preserves the Genblaze provider's chained-output optimisation, which
-    # matches on the still's ORIGINAL sha256 (see genblaze_provider.py).
-    assert provider.video_inputs == [still_raw]
+    # Only the clip reaches this provider now -- the seed is the pipeline's
+    # OWN deterministic schematic raster (unwatermarked), never provider
+    # output, and it is genuinely decodable (never opaque/garbage bytes).
+    assert provider.calls == ["video"]
+    assert provider.video_inputs is not None and len(provider.video_inputs) == 1
+    seed_bytes = provider.video_inputs[0]
+    Image.open(io.BytesIO(seed_bytes)).load()  # genuinely decodable
 
-    # The sealed hashes are the POST-overlay bytes, not the raw generated
-    # ones -- "everything downstream seals the watermarked bytes".
+    # The sealed hashes are the POST-overlay bytes, not the raw generated /
+    # rendered ones -- "everything downstream seals the watermarked bytes".
     stored_clip = storage.get(result.artifacts["illustration"].key)
     stored_still = storage.get(result.artifacts["illustration_still"].key)
     assert stored_clip != clip_raw
-    assert stored_still != still_raw
+    assert stored_still != seed_bytes  # the burn actually changed the pixels
     assert verify_artifact(result.manifest, "illustration", stored_clip) is True
     assert verify_artifact(result.manifest, "illustration_still", stored_still) is True
 
@@ -121,13 +129,23 @@ def test_pipeline_seals_the_post_overlay_bytes_for_still_and_clip(photos):
 
 
 def test_pipeline_fail_safe_when_the_provider_returns_undecodable_bytes(photos):
-    """A live (non-degraded) provider that returns bytes the burner cannot
-    process must still seal a full case -- with an honest ``burned=False``
-    and the ORIGINAL bytes shipped, never a raise, never a false positive."""
-    garbage_still = b"not a real still"
+    """A live (non-degraded) CLIP provider that returns bytes the burner
+    cannot process must still seal a full case -- with an honest
+    ``burned=False`` and the ORIGINAL bytes shipped, never a raise, never a
+    false positive.
+
+    The STILL burn is independent of the clip provider now: the seed is
+    always the pipeline's own genuine, Pillow-rendered schematic PNG (never
+    provider-supplied), so it keeps succeeding even while the clip fails --
+    only the clip's disclosure burn is exposed to whatever garbage a live
+    provider might return. The still burner's OWN fail-safe path (what
+    happens when IT is handed undecodable bytes) stays covered at the unit
+    level, see
+    test_watermark.py::test_burn_still_watermark_fail_safe_on_undecodable_input.
+    """
     garbage_clip = b"not a real clip"
     storage = InMemoryStorage(bucket="wm-int-fail")
-    provider = _RealMediaProvider(garbage_still, garbage_clip)
+    provider = _RealMediaProvider(garbage_clip)
     pipeline = CasePipeline(FakeVisionExtractor(), provider, storage,
                             renderer=PillowSchematicRenderer(animate=False))
 
@@ -138,20 +156,22 @@ def test_pipeline_fail_safe_when_the_provider_returns_undecodable_bytes(photos):
     assert ill["degraded"] is False
     assert ill["watermark_burned"] is False
     assert ill["watermark_error"]
-    assert ill["still_watermark_burned"] is False
-    assert ill["still_watermark_error"]
+    assert ill["still_watermark_burned"] is True
+    assert ill["still_watermark_error"] is None
 
-    # The artifact was NOT dropped, and the sealed hash matches exactly what
-    # shipped (the untouched original bytes) -- never a silent mismatch.
+    # The clip artifact was NOT dropped, and its sealed hash matches exactly
+    # what shipped (the untouched original bytes) -- never a silent mismatch.
+    # The still DID burn successfully (see above), so its stored bytes differ
+    # from what fed the provider call.
     stored_clip = storage.get(result.artifacts["illustration"].key)
     stored_still = storage.get(result.artifacts["illustration_still"].key)
     assert stored_clip == garbage_clip
-    assert stored_still == garbage_still
+    assert stored_still != provider.video_inputs[0]
     assert verify_artifact(result.manifest, "illustration", stored_clip) is True
     assert verify_artifact(result.manifest, "illustration_still", stored_still) is True
 
-    # And the aggregate receipt makes the gap LOUD rather than shipping
-    # silently: a live illustration without a burned-in disclosure fails.
+    # The aggregate receipt makes the remaining gap LOUD: the clip's missing
+    # disclosure still fails the case overall, even though the still is fine.
     def fetch(name: str) -> bytes | None:
         ref = result.artifacts.get(name)
         return storage.get(ref.key) if ref is not None else None
@@ -160,4 +180,4 @@ def test_pipeline_fail_safe_when_the_provider_returns_undecodable_bytes(photos):
     assert receipt.success is False
     checks_by_id = {c["id"]: c for c in receipt.checks}
     assert checks_by_id["structural.illustration_watermark_burned"]["passed"] is False
-    assert checks_by_id["structural.illustration_still_watermark_burned"]["passed"] is False
+    assert checks_by_id["structural.illustration_still_watermark_burned"]["passed"] is True

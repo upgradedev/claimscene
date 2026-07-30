@@ -75,6 +75,15 @@ class SchematicArtifacts:
     frames_png: list[bytes] = field(default_factory=list)
     animation_mp4: bytes | None = None
     fps: int = 8
+    #: The impact-frame render with every drawn TEXT omitted (header,
+    #: per-vehicle id labels, timestamp, phase caption, both watermark
+    #: captions) -- geometry only. This is what feeds the illustration clip
+    #: as its seed image (see pipeline.py step 5): the deterministic
+    #: schematic raster, not a generative still, and never itself sealed as
+    #: a "schematic" artifact (``hero_png`` remains the one that is, fully
+    #: annotated and watermarked, unchanged). Empty bytes when there are no
+    #: vehicle tracks to render (mirrors ``hero_png``'s own empty-case).
+    seed_png: bytes = b""
 
     @property
     def frame_count(self) -> int:
@@ -393,7 +402,27 @@ def _dashed_line(draw, a, b, color, width, on, off) -> None:
 
 
 def render_frame(timeline: Timeline, index: int, *, title: str | None = None,
-                 width: int = 960, height: int = 720, scale: float = 8.0) -> bytes:
+                 width: int = 960, height: int = 720, scale: float = 8.0,
+                 annotate: bool = True) -> bytes:
+    """Render one frame of the schematic animation (world geometry -> PNG).
+
+    ``annotate=True`` (the default, byte-identical to every call site that
+    predates this parameter) draws the full frame: the header, the
+    per-vehicle id labels, the elapsed-time stamp, the phase caption, and
+    both "ILLUSTRATION -- NOT EVIDENCE" watermark captions, on top of the
+    geometry. ``annotate=False`` renders ONLY the geometry -- road, motion
+    trail, vehicle bodies, damage-zone markers, the contact burst -- with
+    every piece of drawn TEXT omitted.
+
+    ``PillowSchematicRenderer`` uses ``annotate=False`` for exactly one
+    purpose: ``SchematicArtifacts.seed_png``, the raster that seeds the
+    illustration clip (see pipeline.py step 5). The clip's own prompt
+    promises the model "no text, no labels, no captions, and no watermarks"
+    on the seed image; a seed that itself carried text would both contradict
+    that promise and risk the model garbling inherited text while animating.
+    Every SEALED schematic artifact (the hero PNG, every animation frame)
+    keeps ``annotate=True`` -- this parameter never changes their bytes.
+    """
     view = _View(width, height, scale)
     img = Image.new("RGB", (width, height), _hex_rgb(BG))
     draw = ImageDraw.Draw(img)
@@ -428,9 +457,10 @@ def render_frame(timeline: Timeline, index: int, *, title: str | None = None,
         nose = [view.px(nx, ny) for nx, ny in
                 _vehicle_nose(pose, meta.length_m, meta.width_m)]
         draw.polygon(nose, fill=_hex_rgb(TEXT))
-        lx, ly = view.px(pose.x, pose.y)
-        draw.text((lx, ly - 22), track.vehicle_id, fill=_hex_rgb(TEXT),
-                  font=_font(13), anchor="ms")
+        if annotate:
+            lx, ly = view.px(pose.x, pose.y)
+            draw.text((lx, ly - 22), track.vehicle_id, fill=_hex_rgb(TEXT),
+                      font=_font(13), anchor="ms")
         if index >= impact_i:
             for dz in meta.damage:
                 dx, dy = clock_point_world(pose, dz.clock_position,
@@ -444,19 +474,20 @@ def render_frame(timeline: Timeline, index: int, *, title: str | None = None,
         pts = [view.px(x, y) for x, y in _burst(*timeline.contact_point)]
         draw.polygon(pts, fill=_hex_rgb(CONTACT))
 
-    heading = title or "TOP-DOWN SCHEMATIC"
-    draw.text((width / 2, 22), f"CLAIMSCENE · {heading} · FACTUAL LAYER",
-              fill=_hex_rgb(TEXT), font=_font(15), anchor="mm")
-    draw.text((width - 16, 22), f"t=+{t:05.2f}s", fill=_hex_rgb(TEXT),
-              font=_font(14), anchor="rm")
-    active = [e.label for e in timeline.events if e.t <= t + 1e-9]
-    if active:
-        draw.text((16, height - 40), f"phase: {active[-1]}",
-                  fill=_hex_rgb(TEXT_DIM), font=_font(13), anchor="lm")
-    draw.text((width / 2, height / 2), WATERMARK, fill=_hex_rgb(WATERMARK_COLOR),
-              font=_font(30), anchor="mm")
-    draw.text((width / 2, height - 16), WATERMARK, fill=_hex_rgb(TEXT_DIM),
-              font=_font(13), anchor="mm")
+    if annotate:
+        heading = title or "TOP-DOWN SCHEMATIC"
+        draw.text((width / 2, 22), f"CLAIMSCENE · {heading} · FACTUAL LAYER",
+                  fill=_hex_rgb(TEXT), font=_font(15), anchor="mm")
+        draw.text((width - 16, 22), f"t=+{t:05.2f}s", fill=_hex_rgb(TEXT),
+                  font=_font(14), anchor="rm")
+        active = [e.label for e in timeline.events if e.t <= t + 1e-9]
+        if active:
+            draw.text((16, height - 40), f"phase: {active[-1]}",
+                      fill=_hex_rgb(TEXT_DIM), font=_font(13), anchor="lm")
+        draw.text((width / 2, height / 2), WATERMARK, fill=_hex_rgb(WATERMARK_COLOR),
+                  font=_font(30), anchor="mm")
+        draw.text((width / 2, height - 16), WATERMARK, fill=_hex_rgb(TEXT_DIM),
+                  font=_font(13), anchor="mm")
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -500,7 +531,16 @@ class PillowSchematicRenderer:
         frames = [render_frame(timeline, i, title=title, width=self.width,
                                height=self.height, scale=self.scale)
                   for i in range(n)]
-        hero = frames[impact_frame_index(timeline)] if frames else b""
+        if frames:
+            impact_i = impact_frame_index(timeline)
+            hero = frames[impact_i]
+            # ``title`` is irrelevant here: annotate=False never draws it.
+            seed = render_frame(timeline, impact_i, width=self.width,
+                                height=self.height, scale=self.scale,
+                                annotate=False)
+        else:
+            hero = b""
+            seed = b""
         animation = encode_mp4(frames, fps=self.fps) if self.animate else None
         return SchematicArtifacts(static_svg=svg, hero_png=hero, frames_png=frames,
-                                  animation_mp4=animation, fps=self.fps)
+                                  animation_mp4=animation, fps=self.fps, seed_png=seed)

@@ -11,9 +11,11 @@ from claimscene.adapters.fakes import (
     InMemoryStorage,
 )
 from claimscene.case import CaseSpec
+from claimscene.layout import LayoutEngine
 from claimscene.pipeline import CasePipeline
 from claimscene.provenance import WATERMARK, verify_artifact, verify_manifest
 from claimscene.schematic import PillowSchematicRenderer
+from claimscene.watermark import burn_still_watermark
 
 
 @pytest.fixture
@@ -64,15 +66,84 @@ def test_illustration_sealed_as_degraded_fake(pipeline, photos):
 
 
 def test_illustration_still_sealed_and_chained_into_clip(pipeline, photos):
+    """The manifest's 'still' fields now describe the deterministic schematic
+    raster that seeds the clip, not a text-to-image generation -- see
+    pipeline.py step 5 and report.ILLUSTRATION_SEED_NOTE."""
     result = _run(pipeline, photos)
     ill = result.manifest["illustration"]
-    assert ill["still_model"] == "seedream-5.0-lite"
-    assert "Computer-generated 3D forensic accident-reconstruction render" in ill["still_prompt"]
+    assert ill["still_model"] is None  # no text-to-image model produced it
+    assert ill["still_source"] == "schematic:impact_frame"
+    still_lower = ill["still_prompt"].lower()
+    assert "no still-image model or prompt was used" in still_lower
+    assert "computer-generated" in still_lower
+    assert "not a real recording" in still_lower
     still_ref = result.artifacts["illustration_still"]
     assert ill["still_sha256"] == still_ref.sha256
     assert still_ref.content_type == "image/png"
     # Both illustration artifacts live under the same storage kind.
     assert still_ref.key.split("/")[1] == "illustration"
+
+
+class _RecordingMediaProvider:
+    """Wraps ``FakeMediaProvider``, recording every ``generate()`` call's
+    kwargs -- so a test can assert on exactly what reached the provider
+    (which modality, which bytes), not just that the pipeline completed."""
+
+    name = "fake-media"
+
+    def __init__(self) -> None:
+        self._inner = FakeMediaProvider()
+        self.calls: list[dict] = []
+
+    def generate(self, *, model, prompt, modality="video", inputs=None, params=None):
+        self.calls.append({"model": model, "prompt": prompt, "modality": modality,
+                           "inputs": list(inputs) if inputs else []})
+        return self._inner.generate(model=model, prompt=prompt, modality=modality,
+                                    inputs=inputs, params=params)
+
+
+def test_clip_is_seeded_by_the_schematic_raster_not_a_generated_still(photos):
+    """The illustration clip step must receive the case's OWN deterministic
+    schematic raster as its input image -- never a second generative call.
+    Asserts on the actual bytes the provider received (ground-truth
+    recomputed independently from the same scene/timeline/renderer), not
+    just that some input was present: a live render on 2026-07-30 proved
+    prompt text alone cannot pin geometry, so the fix pins it by feeding the
+    model the factual raster instead (see pipeline.py step 5)."""
+    provider = _RecordingMediaProvider()
+    pipeline = CasePipeline(FakeVisionExtractor(), provider, InMemoryStorage(),
+                            renderer=PillowSchematicRenderer(animate=False))
+    result = _run(pipeline, photos, case_id="seed-check")
+
+    image_calls = [c for c in provider.calls if c["modality"] == "image"]
+    video_calls = [c for c in provider.calls if c["modality"] == "video"]
+    assert image_calls == []  # no text-to-image generative call at all any more
+    assert len(video_calls) == 1
+    assert len(video_calls[0]["inputs"]) == 1
+    seed_bytes = video_calls[0]["inputs"][0]
+
+    # Ground truth: independently rebuild the exact seed the pipeline itself
+    # derived from the SAME scene/timeline/renderer, and require byte
+    # equality -- not just "some PNG". (``title`` is irrelevant to seed_png:
+    # it is rendered with annotate=False, which never draws it.)
+    scene = FakeVisionExtractor().extract(photos)
+    timeline = LayoutEngine().build(scene)
+    expected_seed = PillowSchematicRenderer(animate=False).render(timeline).seed_png
+    assert seed_bytes == expected_seed
+
+    # The fed seed is the UN-watermarked raster: it must differ from the
+    # SEALED (watermarked) illustration_still bytes, and burning the
+    # disclosure onto it must reproduce those sealed bytes exactly -- the
+    # single-on-clip-caption invariant this change depends on.
+    stored_still = result.payloads["illustration_still"]
+    assert seed_bytes != stored_still
+    assert burn_still_watermark(seed_bytes).data == stored_still
+
+    # And it must not be the schematic's OWN sealed hero frame either: that
+    # frame already carries "ILLUSTRATION -- NOT EVIDENCE" burned in twice
+    # (see schematic.py) -- feeding it forward would double (or, once a
+    # generative model reinterprets it, triple and garble) the on-clip text.
+    assert seed_bytes != result.payloads["schematic_hero"]
 
 
 def test_illustration_prompts_avoid_photorealism_cues(pipeline, photos):

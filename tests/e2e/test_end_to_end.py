@@ -72,18 +72,21 @@ def test_index_lists_every_artifact(run):
 
 
 def test_illustration_layer_sealed_with_still_and_clip(run):
-    """Work item: the illustration section must honestly record the two-step
-    generative layer — still model/prompt/hash + clip model/prompt/hash +
-    provider + degraded flag — and both artifacts must be in storage."""
+    """The illustration section must honestly record BOTH layers: the clip's
+    generative provenance (model/prompt/hash/provider/degraded) and the
+    seed's schematic provenance (no model, no prompt -- see pipeline.py step
+    5) -- and both artifacts must be in storage."""
     storage, result = run
     manifest = json.loads(storage.get(result.artifacts["manifest"].key))
     ill = manifest["illustration"]
     for field in ("provider", "model", "prompt", "sha256",
-                  "still_model", "still_prompt", "still_sha256", "degraded"):
+                  "still_model", "still_source", "still_prompt",
+                  "still_sha256", "degraded"):
         assert field in ill, field
     assert ill["degraded"] is True  # offline fakes must never claim otherwise
     assert ill["model"] == "pixverse-v6-i2v"
-    assert ill["still_model"] == "seedream-5.0-lite"
+    assert ill["still_model"] is None  # no text-to-image model produced it
+    assert ill["still_source"] == "schematic:impact_frame"
     assert verify_artifact(manifest, "illustration_still",
                            storage.get(result.artifacts["illustration_still"].key))
 

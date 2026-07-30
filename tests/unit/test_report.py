@@ -69,19 +69,25 @@ def test_prompts_stay_in_the_moderation_safe_forensic_register():
     """Both generation prompts must keep the forensic-reconstruction framing,
     depict no people, and never use a word that invites photorealism (the
     generative model must not be nudged toward looking like a real
-    recording)."""
+    recording). The still (unused by the pipeline now) stays in the 3D-CGI
+    register; the clip is in the top-down-diagram register that matches its
+    schematic-derived seed image -- see ``illustration_prompt``."""
     scene = _scene_rear_end()
     timeline = LayoutEngine().build(scene)
     forbidden = ("photorealistic", "photograph", "dashcam", "real footage",
                 "cinematic film still", "documentary footage")
     for prompt in (illustration_still_prompt(scene, timeline),
                    illustration_prompt(scene, timeline)):
-        assert "Computer-generated 3D forensic accident-reconstruction render" in prompt
+        assert "Computer-generated" in prompt
         assert "no people, no injuries" in prompt
         assert "not a real recording" in prompt
         lowered = prompt.lower()
         for word in forbidden:
             assert word not in lowered
+    assert ("3D forensic accident-reconstruction render"
+           in illustration_still_prompt(scene, timeline))
+    assert ("top-down forensic reconstruction diagram"
+           in illustration_prompt(scene, timeline))
 
 
 def test_still_prompt_describes_vehicles_and_damage():
@@ -277,10 +283,14 @@ def _assert_no_relationship_claimed(prompt: str) -> None:
     contact clause) are absent, while the rest of the forensic register is
     still intact. (Not checking for the bare word "facing": that could
     legitimately appear in unrelated future prose, e.g. a camera direction,
-    so it would be a fragile, over-broad assertion here.)"""
+    so it would be a fragile, over-broad assertion here.) Checks only
+    "Computer-generated" rather than the full still-prompt phrase: the still
+    and clip prompts are in different registers (3D-CGI vs top-down-diagram,
+    see ``illustration_prompt``), and "Computer-generated" is the one framing
+    fragment both still carry."""
     assert "meeting at" not in prompt
     assert "point of impact" not in prompt
-    assert "Computer-generated 3D forensic accident-reconstruction render" in prompt
+    assert "Computer-generated" in prompt
     assert "no text, no labels, no captions, and no watermarks" in prompt
 
 
