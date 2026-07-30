@@ -25,7 +25,7 @@ from .provenance import (
     sha256_bytes,
     verify_all,
 )
-from .report import build_report, illustration_prompt, illustration_still_prompt
+from .report import ILLUSTRATION_SEED_NOTE, build_report, illustration_prompt
 from .scene import SceneGraph, scene_to_json, semantic_warnings
 from .schematic import PillowSchematicRenderer
 from .watermark import burn_clip_watermark, burn_still_watermark
@@ -146,30 +146,40 @@ class CasePipeline:
             self._store(result, "schematic_animation", "schematic",
                         "schematic.mp4", art.animation_mp4, "video/mp4")
 
-        # 5. Illustration (generative, explicitly sealed as such), two steps:
-        #    an establish-shot still, then an image-to-video clip chained from
-        #    that still (the provider reuses the still's hosted URL live).
-        #    Both prompts are built from ``scene`` AND ``timeline`` -- the
-        #    Timeline's already-computed poses at the impact frame give the
-        #    prompt the real relative position/orientation between impact
-        #    participants, so the illustration matches the schematic instead
-        #    of the model inventing its own layout. The prompts also now ask
-        #    for no on-image text -- the disclosure is guaranteed instead by
-        #    burning it into the actual pixels here, deterministically, after
-        #    generation (see watermark.py; a live render proved a prompt
-        #    request alone is not a guarantee, the model can simply ignore
-        #    it). The RAW (unwatermarked) still bytes are what feed the video
-        #    step, so the Genblaze provider's chained-output optimisation
-        #    (same sha256 -> same hosted URL, see
-        #    GenblazeMediaProvider._hosted_by_sha) still matches live; only
-        #    the STORED/SEALED copies are watermarked.
-        still_prompt = illustration_still_prompt(scene, timeline)
-        still_raw = self.provider.generate(
-            model=spec.illustration_still_model, prompt=still_prompt,
-            modality="image",
-            params={"size": "2K", "output_format": "png", "max_images": 1,
-                    "watermark": False},
-        )
+        # 5. Illustration (generative, explicitly sealed as such). The clip
+        #    is seeded by the case's OWN deterministic schematic raster --
+        #    ``art.seed_png``, the impact-frame render from step 4 with its
+        #    text/watermark omitted (see
+        #    ``schematic.SchematicArtifacts.seed_png`` /
+        #    ``render_frame``'s ``annotate`` flag) -- instead of a
+        #    text-to-image generation. A live render on 2026-07-30 (case
+        #    ``live-forensic-retry-0bb32eeb``) rendered a stated rear-end
+        #    collision as a head-on collision even with an explicit geometry
+        #    sentence already in the prompt: prompt-level control alone
+        #    cannot pin geometry a diffusion model is free to reinterpret.
+        #    Seeding from the schematic makes the layout INHERITED rather
+        #    than requested, so it cannot drift. ``prompt`` is still built
+        #    from ``scene`` AND ``timeline`` (see ``illustration_prompt``),
+        #    restating the same geometry sentence so the text and the seed
+        #    image agree. The prompt also asks for no on-image text -- the
+        #    disclosure is guaranteed instead by burning it into the actual
+        #    pixels here, deterministically, after generation (see
+        #    watermark.py). The RAW (unwatermarked) seed bytes are what feed
+        #    the video step; only the STORED/SEALED copy
+        #    (``illustration_still``) is watermarked, so the clip's own
+        #    burned-in caption stays the single on-image text (double text
+        #    is exactly why the seed must be unwatermarked: the schematic's
+        #    OWN hero frame already carries "ILLUSTRATION -- NOT EVIDENCE"
+        #    burned in twice over -- feeding that forward would risk a third,
+        #    model-garbled copy on top). Because the seed was never generated
+        #    by this provider instance, the Genblaze adapter's chained-output
+        #    shortcut (same sha256 -> reuse the hosted URL, see
+        #    GenblazeMediaProvider._hosted_by_sha) never applies here any
+        #    more -- it always persists through the storage backend instead
+        #    (see GenblazeMediaProvider._external_inputs), which needs B2
+        #    configured; in practice it always is, since B2 is ClaimScene's
+        #    primary storage backend for every other artifact too.
+        still_raw = art.seed_png
         prompt = illustration_prompt(scene, timeline)
         illustration_raw = self.provider.generate(
             model=spec.illustration_model, prompt=prompt, modality="video",
@@ -247,8 +257,18 @@ class CasePipeline:
                 "model": spec.illustration_model,
                 "prompt": prompt,
                 "sha256": result.artifacts["illustration"].sha256,
-                "still_model": spec.illustration_still_model,
-                "still_prompt": still_prompt,
+                # The seed is no longer a text-to-image generation -- see the
+                # note at step 5 above -- so these three fields describe the
+                # deterministic schematic raster's provenance instead of a
+                # model call. ``still_model`` is honestly ``None`` (no model
+                # produced this); ``still_source`` names exactly which
+                # factual artifact it is; ``still_prompt`` keeps its old key
+                # (readiness.py and the frontend both still read it) but now
+                # holds a provenance note, not a prompt -- see
+                # ``report.ILLUSTRATION_SEED_NOTE``.
+                "still_model": None,
+                "still_source": "schematic:impact_frame",
+                "still_prompt": ILLUSTRATION_SEED_NOTE,
                 "still_sha256": result.artifacts["illustration_still"].sha256,
                 "degraded": degraded,
                 # Structural, sealed proof that the disclosure was burned into

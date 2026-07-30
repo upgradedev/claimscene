@@ -56,6 +56,35 @@ def test_frames_are_valid_png_and_full_grid(timeline):
     assert art.animation_mp4 is None  # animate=False never encodes
 
 
+def test_seed_png_is_a_distinct_unannotated_impact_frame(timeline):
+    """``SchematicArtifacts.seed_png`` is what pipeline.py hands the
+    illustration clip step as its seed image (see pipeline.py step 5) -- it
+    must be a real, valid PNG at the impact frame, and it must differ from
+    the sealed hero frame (which carries the schematic's own watermark and
+    labels burned in already: feeding that forward would double the on-clip
+    caption, see the PR that added this field)."""
+    renderer = PillowSchematicRenderer(animate=False)
+    art = renderer.render(timeline)
+    assert art.seed_png.startswith(PNG_MAGIC)
+    assert art.seed_png != art.hero_png
+    assert art.seed_png == render_frame(
+        timeline, impact_frame_index(timeline), annotate=False)
+
+
+def test_render_frame_annotate_false_is_opt_in_and_differs_from_default(timeline):
+    """``annotate=True`` stays the default, byte-identical to every call site
+    that predates this parameter (the sealed schematic artifacts never pass
+    it explicitly). ``annotate=False`` is a distinct, purpose-built rendering
+    used only for the illustration seed (see
+    ``PillowSchematicRenderer.render``)."""
+    i = impact_frame_index(timeline)
+    default = render_frame(timeline, i, title="t")
+    explicit_true = render_frame(timeline, i, title="t", annotate=True)
+    bare = render_frame(timeline, i, title="t", annotate=False)
+    assert default == explicit_true
+    assert default != bare
+
+
 def test_frames_deterministic_within_environment(timeline):
     a = render_frame(timeline, 5)
     b = render_frame(timeline, 5)

@@ -1,11 +1,17 @@
-"""Real Genblaze-backed generative-media provider (stills + clips via GMI Cloud).
+"""Real Genblaze-backed generative-media provider (clips via GMI Cloud).
 
 Wraps a Genblaze single-step ``Pipeline`` behind the :class:`MediaProvider`
-port for TWO operations ClaimScene needs:
+port. Supports two modalities:
 
-  * ``modality="image"`` — the establish-shot still (``seedream-5.0-lite``)
+  * ``modality="image"``: a text-to-image still. Not called by
+    ``pipeline.py`` any more: the illustration clip's seed image is now the
+    case's own deterministic schematic raster, not a generated still (see
+    ``pipeline.py`` step 5). Kept working here (and still contract-tested in
+    ``test_genblaze_contract.py``) in case a real generated-still path is
+    ever added back.
   * ``modality="video"`` — the illustration clip (``pixverse-v6-i2v`` by
-    default; ``Kling-Image2Video-V2.1-Master`` as the premium option)
+    default; ``Kling-Image2Video-V2.1-Master`` as the premium option). The
+    only operation ClaimScene's pipeline calls today.
 
 Genblaze is imported lazily so the offline package and CI depend on neither
 it nor any provider key. Ported from our other MIT entry, Cinemory, which

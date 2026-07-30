@@ -324,25 +324,14 @@ def _impact_relationship_phrase(scene: SceneGraph, timeline: Timeline) -> str:
     return " ".join(sentences)
 
 
-def _forensic_scene_description(scene: SceneGraph, timeline: Timeline) -> str:
-    """The shared forensic-reconstruction scene wording (still + clip prompts).
-
-    Deterministic, built only from the constrained vocabulary plus the
-    Timeline's already-computed geometry, and kept in the computer-generated
-    forensic-reconstruction register on purpose: a clean, serious CGI
-    accident-reconstruction render, not a toy and not a cartoon, that states
-    plainly it is a computer-generated reconstruction and not a real
-    recording (self-disclosing). It depicts no people and no injuries, which
-    keeps it clear of the sharper content-moderation triggers by
-    construction, though unlike the retired toy-diorama register this exact
-    wording has not yet been probed against a live provider.
-
-    The impact participants' relative position and orientation (e.g. "the
-    red car is directly behind the blue car, nose to tail") come from
-    ``_impact_relationship_phrase``, so the prompt states the scene's actual
-    layout instead of leaving it for the model to invent.
+def _vehicle_damage_clauses(scene: SceneGraph) -> list[str]:
+    """Per-vehicle rundown clauses shared by both illustration prompts:
+    approach/maneuver/speed (or "parked"), then every damage-zone mark, in
+    ``scene.vehicles`` order. Pure text assembly from the constrained
+    vocabulary -- no geometry, no model call, no register-specific wording,
+    so both the still prompt (3D-CGI register) and the clip prompt
+    (top-down-diagram register) describe exactly the same cast of vehicles.
     """
-    road = scene.road
     movements = {m.vehicle_id: m for m in scene.movements}
     parts: list[str] = []
     for v in scene.vehicles:
@@ -361,6 +350,33 @@ def _forensic_scene_description(scene: SceneGraph, timeline: Timeline) -> str:
                 f"{_CLOCK_WORDS[dz.clock_position]}"
             )
         parts.append(phrase)
+    return parts
+
+
+def _forensic_scene_description(scene: SceneGraph, timeline: Timeline) -> str:
+    """The shared forensic-reconstruction scene wording for the still-image
+    prompt only (see ``illustration_still_prompt``).
+
+    Deterministic, built only from the constrained vocabulary plus the
+    Timeline's already-computed geometry, and kept in the computer-generated
+    3D-CGI forensic-reconstruction register on purpose: a clean, serious CGI
+    accident-reconstruction render, not a toy and not a cartoon, that states
+    plainly it is a computer-generated reconstruction and not a real
+    recording (self-disclosing). It depicts no people and no injuries, which
+    keeps it clear of the sharper content-moderation triggers by
+    construction, though unlike the retired toy-diorama register this exact
+    wording has not yet been probed against a live provider.
+
+    The impact participants' relative position and orientation (e.g. "the
+    red car is directly behind the blue car, nose to tail") come from
+    ``_impact_relationship_phrase``, so the prompt states the scene's actual
+    layout instead of leaving it for the model to invent. See
+    ``_forensic_diagram_description`` for the clip's own, separate
+    top-down-diagram register, which shares the vehicle rundown and the
+    relationship sentence with this function but not the 3D-CGI framing.
+    """
+    road = scene.road
+    parts = _vehicle_damage_clauses(scene)
     relationship = _impact_relationship_phrase(scene, timeline)
     relationship_sentence = f" {relationship}" if relationship else ""
     return (
@@ -377,7 +393,17 @@ def _forensic_scene_description(scene: SceneGraph, timeline: Timeline) -> str:
 
 
 def illustration_still_prompt(scene: SceneGraph, timeline: Timeline) -> str:
-    """Deterministic prompt for the establish-shot still (text → image)."""
+    """Deterministic prompt for a generated establish-shot still (text -> image).
+
+    No longer called by the pipeline. The illustration clip's seed image is
+    now the case's own deterministic schematic raster (the impact-frame
+    render, unwatermarked -- see ``schematic.SchematicArtifacts.seed_png``
+    and ``pipeline.py`` step 5), not a generated still, so this function has
+    no manifest field of its own any more (see ``ILLUSTRATION_SEED_NOTE``
+    for what the manifest records instead). Kept here unchanged and still
+    unit-tested as the prompt ClaimScene would send if a real generated-still
+    path is ever added back.
+    """
     return (
         "Clean, serious forensic accident-reconstruction still, "
         "establish-shot framing. "
@@ -386,22 +412,87 @@ def illustration_still_prompt(scene: SceneGraph, timeline: Timeline) -> str:
     )
 
 
-def illustration_prompt(scene: SceneGraph, timeline: Timeline) -> str:
-    """Deterministic prompt for the illustration clip (still → video).
+def _forensic_diagram_description(scene: SceneGraph, timeline: Timeline) -> str:
+    """The shared top-down-diagram scene wording for the illustration CLIP
+    prompt only (see ``illustration_prompt``).
 
-    Built only from the constrained vocabulary plus the Timeline's computed
-    geometry. This used to end with an ``Overlay text: '{DISCLOSURE}'``
-    request; that line is gone. A live render on 2026-07-30 (case
-    ``live-forensic-retry-0bb32eeb``) proved the model is free to ignore
-    such a request, and asking for that text overlay would now directly
-    contradict the "no text" instruction inside
-    ``_forensic_scene_description`` above -- a contradictory prompt is
-    worse than no prompt. The disclosure is guaranteed instead by
+    The clip's seed image is a raster of the case's own deterministic
+    schematic (see ``schematic.py`` / ``pipeline.py`` step 5): a flat
+    top-down blueprint diagram, not a three-quarter-view 3D CGI establish
+    shot. Describing the clip in 3D-CGI terms while feeding it a 2D top-down
+    seed is exactly the prompt/seed mismatch this rewrite exists to remove
+    -- a live render on 2026-07-30 rendered a stated rear-end collision as a
+    head-on collision even with an explicit geometry sentence already in the
+    prompt, so this description stays in the top-down-diagram register
+    throughout, still self-disclosing (computer-generated, not a real
+    recording) and still free of any word that invites photorealism.
+
+    Shares the per-vehicle rundown (``_vehicle_damage_clauses``) and the
+    impact-relationship sentence (``_impact_relationship_phrase``) with
+    ``_forensic_scene_description`` (the still-prompt's now pipeline-unused
+    sibling), so both stay consistent with the same underlying geometry.
+    """
+    road = scene.road
+    parts = _vehicle_damage_clauses(scene)
+    relationship = _impact_relationship_phrase(scene, timeline)
+    relationship_sentence = f" {relationship}" if relationship else ""
+    return (
+        "Computer-generated top-down forensic reconstruction diagram, not "
+        "a real recording, showing "
+        f"{_LAYOUT_WORDS[scene.road.layout.value]} with "
+        f"{_SIGNAL_WORDS[road.signal]}: " + "; ".join(parts) + "."
+        + relationship_sentence +
+        " Flat orthographic bird's-eye view, engineering blueprint style, "
+        "not a toy, not a cartoon, no people, no injuries. The rendered "
+        "video itself must contain no text, no labels, no captions, and no "
+        "watermarks."
+    )
+
+
+def illustration_prompt(scene: SceneGraph, timeline: Timeline) -> str:
+    """Deterministic prompt for the illustration clip (image -> video).
+
+    The clip is no longer seeded by a generated establish-shot still: its
+    seed image is the case's own deterministic schematic raster (see
+    ``pipeline.py`` step 5 / ``schematic.SchematicArtifacts.seed_png``), so
+    this prompt asks the model to gently animate THAT top-down diagram --
+    camera parallax and a slow push, vehicles held perfectly static --
+    instead of describing a scene the model would have to invent from
+    scratch. A live render on 2026-07-30 (case
+    ``live-forensic-retry-0bb32eeb``) rendered a stated rear-end collision as
+    a head-on collision even with an explicit geometry sentence already in
+    the prompt: prompt-level control alone was not enough to pin geometry a
+    diffusion model is free to reinterpret. Seeding from the schematic makes
+    the layout INHERITED rather than requested, so it cannot drift; this
+    prompt still restates the same geometry sentence too, so the seed image
+    and the text agree (see ``_impact_relationship_phrase``). This used to
+    end with an ``Overlay text: '{DISCLOSURE}'`` request; that line is gone
+    -- the disclosure is guaranteed instead by
     ``watermark.burn_clip_watermark``, deterministically, after generation.
     """
     return (
-        "Slow smooth camera orbit around this forensic "
-        "accident-reconstruction scene. "
-        + _forensic_scene_description(scene, timeline)
-        + " The vehicles stay perfectly still; gentle parallax only."
+        "Gentle camera parallax and a slow push over this top-down forensic "
+        "reconstruction diagram. "
+        + _forensic_diagram_description(scene, timeline)
+        + " The vehicles stay perfectly static in the exact positions "
+        "already shown in the diagram; only the camera moves."
     )
+
+
+#: What the sealed manifest records in ``illustration.still_prompt`` now that
+#: the field no longer names a text-to-image generation (see pipeline.py step
+#: 5). Plain and truthful rather than a per-scene template: there is no
+#: generation content to describe, only the fact that there is none. Carries
+#: the same self-disclosure markers a real generation prompt is required to
+#: carry (see ``scripts/readiness.py::check_genblaze_illustration_port_sealed``)
+#: so that check keeps verifying the illustration's honesty even though
+#: nothing here was ever sent to a model.
+ILLUSTRATION_SEED_NOTE = (
+    "No still-image model or prompt was used to produce this seed. It is "
+    "the case's own deterministic top-down schematic raster (the "
+    "impact-frame render), computer-generated from the factual Timeline "
+    "and not a real recording, stripped of the schematic's own watermark so "
+    "the illustration clip's single burned-in disclosure caption is the "
+    "only on-image text. The illustration clip below is seeded from exactly "
+    "these pixels, so its geometry is inherited, not requested."
+)

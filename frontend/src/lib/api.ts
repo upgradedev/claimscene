@@ -162,7 +162,13 @@ export const ManifestSchema = z.object({
     model: z.string(),
     prompt: z.string(),
     sha256: z.string(),
-    still_model: z.string().optional(),
+    // The clip's seed is now the case's own deterministic schematic raster,
+    // not a text-to-image generation (see pipeline.py), so `still_model` is
+    // honestly `null` -- no model produced it -- and `still_source` names
+    // the factual artifact instead. `still_prompt` keeps its key but now
+    // holds a provenance note, not a generation prompt.
+    still_model: z.string().nullable().optional(),
+    still_source: z.string().nullable().optional(),
     still_prompt: z.string().optional(),
     still_sha256: z.string().optional(),
     degraded: z.boolean(),

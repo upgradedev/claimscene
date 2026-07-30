@@ -67,10 +67,11 @@ class CaseSpec(BaseModel):
     case_id: str = Field(min_length=1, max_length=64)
     photos: list[CasePhoto] = Field(min_length=1)
     context: str | None = None
-    # Establish-shot still, then the still feeds the image-to-video clip.
-    # pixverse is the budget default; Kling-Image2Video-V2.1-Master is the
+    # The illustration clip's seed image is the case's own deterministic
+    # schematic raster (see pipeline.py step 5), not a generated still, so
+    # there is no still-image model to configure here any more. pixverse is
+    # the clip's budget default; Kling-Image2Video-V2.1-Master is the
     # premium option (both on GMI Cloud via Genblaze).
-    illustration_still_model: str = "seedream-5.0-lite"
     illustration_model: str = "pixverse-v6-i2v"
     # ── sealed AI→human approval receipt (computed by the pipeline) ──────────
     # The AI-proposed scene the human reviewed against. When present, the
