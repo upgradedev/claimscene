@@ -15,6 +15,7 @@ from .keys import KeyStrategy, make_key
 from .layout import LayoutEngine, Timeline, timeline_to_json
 from .ports import MediaProvider, Renderer, StorageBackend, VisionExtractor
 from .provenance import (
+    DISCLOSURE,
     WATERMARK,
     build_detached_receipt,
     build_manifest,
@@ -27,6 +28,7 @@ from .provenance import (
 from .report import build_report, illustration_prompt, illustration_still_prompt
 from .scene import SceneGraph, scene_to_json, semantic_warnings
 from .schematic import PillowSchematicRenderer
+from .watermark import burn_clip_watermark, burn_still_watermark
 
 
 @dataclass
@@ -147,23 +149,35 @@ class CasePipeline:
         # 5. Illustration (generative, explicitly sealed as such), two steps:
         #    an establish-shot still, then an image-to-video clip chained from
         #    that still (the provider reuses the still's hosted URL live).
+        #    ``illustration_prompt`` already ASKS the model to overlay the
+        #    disclosure text, but that is a request, not a guarantee (a live
+        #    render proved the model can simply ignore it) -- so the
+        #    disclosure is additionally burned into the actual pixels here,
+        #    deterministically, after generation (see watermark.py). The RAW
+        #    (unwatermarked) still bytes are what feed the video step, so the
+        #    Genblaze provider's chained-output optimisation (same sha256 ->
+        #    same hosted URL, see GenblazeMediaProvider._hosted_by_sha) still
+        #    matches live; only the STORED/SEALED copies are watermarked.
         still_prompt = illustration_still_prompt(scene)
-        still = self.provider.generate(
+        still_raw = self.provider.generate(
             model=spec.illustration_still_model, prompt=still_prompt,
             modality="image",
             params={"size": "2K", "output_format": "png", "max_images": 1,
                     "watermark": False},
         )
-        self._store(result, "illustration_still", "illustration",
-                    "illustration.png", still, "image/png")
         prompt = illustration_prompt(scene)
-        illustration = self.provider.generate(
+        illustration_raw = self.provider.generate(
             model=spec.illustration_model, prompt=prompt, modality="video",
-            inputs=[still],
+            inputs=[still_raw],
             params={"duration": 5, "quality": "360p"},
         )
+
+        still_burn = burn_still_watermark(still_raw)
+        self._store(result, "illustration_still", "illustration",
+                    "illustration.png", still_burn.data, "image/png")
+        illustration_burn = burn_clip_watermark(illustration_raw)
         self._store(result, "illustration", "illustration", "illustration.mp4",
-                    illustration, "video/mp4")
+                    illustration_burn.data, "video/mp4")
 
         # 6. Deterministic report.
         provenance_note = (
@@ -232,6 +246,14 @@ class CasePipeline:
                 "still_prompt": still_prompt,
                 "still_sha256": result.artifacts["illustration_still"].sha256,
                 "degraded": degraded,
+                # Structural, sealed proof that the disclosure was burned into
+                # the pixels (not merely requested in the prompt above) -- see
+                # watermark.py and provenance.verify_all's matching checks.
+                "watermark_text": DISCLOSURE,
+                "watermark_burned": illustration_burn.burned,
+                "watermark_error": illustration_burn.error,
+                "still_watermark_burned": still_burn.burned,
+                "still_watermark_error": still_burn.error,
             },
             report_sha256=result.artifacts["report"].sha256,
             review=review,

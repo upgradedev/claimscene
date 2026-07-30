@@ -338,3 +338,58 @@ def test_verify_all_tolerates_a_malformed_artifact_section():
     assert all("passed" in c for c in receipt.checks)
     # The unresolved scene_graph section produced no artifact.scene_graph check.
     assert "artifact.scene_graph" not in {c["id"] for c in receipt.checks}
+
+
+# ── verify_all: illustration watermark burn-in (see watermark.py) ────────────
+def test_illustration_watermark_checks_present_and_pass_when_degraded():
+    """The offline/fake illustration is exempt from requiring burned=True
+    (burning synthetic non-media bytes is not meaningful), but the checks
+    still run and pass — this is what keeps every other fake-provider-backed
+    test in this suite (and the readiness gate) green with no special-casing
+    for the offline path."""
+    storage, result = _sealed(proposed=_scene())
+    receipt = verify_all(result.manifest, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_watermark_burned")["passed"] is True
+    assert _check(receipt, "structural.illustration_still_watermark_burned")["passed"] is True
+
+
+def test_live_illustration_without_a_burned_watermark_fails_the_check():
+    """The exact production gap this closes: a live (non-degraded)
+    illustration that shipped without a burned-in disclosure must fail
+    verify_all — case ``live-forensic-retry-0bb32eeb``, 2026-07-30,
+    ``degraded: false``, the disclosure absent from every sampled frame."""
+    storage, result = _sealed(proposed=_scene())
+    lied = json.loads(json.dumps(result.manifest))
+    lied["illustration"]["degraded"] = False  # claim it was a real render
+    # watermark_burned is already False here (the fake provider's synthetic
+    # bytes cannot be burned) — now that combination is dishonest.
+    assert lied["illustration"]["watermark_burned"] is False
+    receipt = verify_all(lied, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_watermark_burned")["passed"] is False
+    assert receipt.success is False
+
+
+def test_illustration_watermark_text_absent_fails_both_checks_even_when_degraded():
+    """The disclosure text itself must always be sealed exactly, regardless of
+    degraded state — a manifest missing the marker entirely (an old shape, or
+    a stripped field) cannot pass just by virtue of being the offline
+    fallback."""
+    storage, result = _sealed(proposed=_scene())
+    stripped = json.loads(json.dumps(result.manifest))
+    del stripped["illustration"]["watermark_text"]
+    receipt = verify_all(stripped, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_watermark_burned")["passed"] is False
+    assert _check(receipt, "structural.illustration_still_watermark_burned")["passed"] is False
+
+
+def test_illustration_watermark_burned_flag_missing_fails_the_check():
+    """A silently omitted flag (as opposed to an honest explicit False) must
+    fail — the receipt can never treat "absent" the same as "sealed, and
+    happens to be false"."""
+    storage, result = _sealed(proposed=_scene())
+    stripped = json.loads(json.dumps(result.manifest))
+    del stripped["illustration"]["watermark_burned"]
+    receipt = verify_all(stripped, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_watermark_burned")["passed"] is False
+    # The sibling (still) check is independent and unaffected.
+    assert _check(receipt, "structural.illustration_still_watermark_burned")["passed"] is True

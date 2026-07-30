@@ -248,6 +248,13 @@ def verify_all(
         NOT-EVIDENCE watermark;
       * ``structural.illustration_degraded`` — the ``degraded`` flag is
         internally consistent with the sealing provider;
+      * ``structural.illustration_watermark_burned`` /
+        ``structural.illustration_still_watermark_burned`` — the disclosure
+        was burned into the clip's / still's pixels (not merely requested in
+        the generation prompt); a live (non-degraded) illustration MUST have
+        burned it in, or the check fails — closing the gap where a real
+        render carried ``degraded: false`` but the prompt-only disclosure was
+        silently ignored by the model;
       * ``review.decision_digest`` — the approval receipt recomputes from its
         sealed proposed/confirmed hashes and stays bound to the sealed scene.
 
@@ -340,6 +347,44 @@ def verify_all(
 
     record("structural.illustration_degraded",
            "Illustration degraded flag is internally consistent", _degraded)
+
+    # The disclosure must be burned into the pixels, not merely requested in
+    # the generation prompt (see watermark.py). Mirrors _watermark() above
+    # for the schematic, but the illustration comes from a generative model
+    # that can (and, on 2026-07-30, did) ignore the prompt instruction — so a
+    # LIVE (non-degraded) illustration must have actually burned it in, or
+    # this check fails. An offline/degraded illustration is exempt from
+    # requiring True (burning synthetic fake bytes is not meaningful), but
+    # must still carry an explicit, honestly-sealed boolean — never a silent
+    # omission — and the disclosure text itself is always required exactly,
+    # regardless of degraded state.
+    for check_id, burned_field, error_field, label_word in (
+        ("structural.illustration_watermark_burned",
+         "watermark_burned", "watermark_error", "clip"),
+        ("structural.illustration_still_watermark_burned",
+         "still_watermark_burned", "still_watermark_error", "still"),
+    ):
+        def _illustration_watermark(burned_field: str = burned_field,
+                                    error_field: str = error_field,
+                                    label_word: str = label_word) -> tuple[bool, str]:
+            illustration = manifest.get("illustration") or {}
+            text = illustration.get("watermark_text")
+            if text != DISCLOSURE:
+                return False, (f"illustration.watermark_text missing or altered "
+                               f"(expected {DISCLOSURE!r}, got {text!r})")
+            burned = illustration.get(burned_field)
+            if not isinstance(burned, bool):
+                return False, f"illustration.{burned_field} missing from the sealed manifest"
+            degraded = illustration.get("degraded")
+            if degraded is False and burned is not True:
+                error = illustration.get(error_field)
+                return False, (f"live illustration {label_word} shipped without a "
+                               f"burned-in disclosure (illustration.{error_field}={error!r})")
+            return True, (f"illustration.{burned_field}={burned} (degraded={degraded}); "
+                          "disclosure text sealed exactly")
+
+        record(check_id, f"Illustration {label_word} disclosure burned into "
+                         "pixels (or honestly flagged)", _illustration_watermark)
 
     def _review() -> tuple[bool, str]:
         review = manifest.get("review")
