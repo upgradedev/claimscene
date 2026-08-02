@@ -17,6 +17,7 @@ from .keys import KeyStrategy, make_key
 from .layout import LayoutEngine, Timeline, timeline_to_json
 from .ports import MediaProvider, Renderer, StorageBackend, VisionExtractor
 from .provenance import (
+    AUTHORSHIP_NOTE,
     DISCLOSURE,
     WATERMARK,
     build_detached_receipt,
@@ -365,6 +366,14 @@ class CasePipeline:
                 "camera_move_note": CAMERA_PUSH_NOTE,
                 "camera_move_applied": camera_result.applied,
                 "camera_move_error": camera_result.error,
+                # The authorship split itself, stated once as a single
+                # explicit claim instead of left for a reader to infer from
+                # the still_source/camera_move_source/watermark_burned
+                # fields above: what this codebase computed versus what the
+                # generative model actually contributed. See
+                # ``provenance.AUTHORSHIP_NOTE`` for the exact sealed text
+                # and ``provenance.verify_all``'s matching structural check.
+                "authorship_note": AUTHORSHIP_NOTE,
             },
             report_sha256=result.artifacts["report"].sha256,
             review=review,

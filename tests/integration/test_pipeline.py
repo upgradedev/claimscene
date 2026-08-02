@@ -336,3 +336,21 @@ def test_manifest_seals_camera_move_provenance(pipeline, photos):
     assert isinstance(ill["camera_move_note"], str) and "deterministic" in ill["camera_move_note"]
     assert ill["camera_move_applied"] is False
     assert ill["camera_move_error"]
+
+
+def test_manifest_seals_the_illustration_authorship_split(pipeline, photos):
+    """The two-layer thesis, provable from the manifest itself: a single
+    explicit statement of what this codebase computed (geometry, camera,
+    disclosure) versus what the generative model actually contributed
+    (visual style only, no placement guarantee) -- see
+    ``provenance.AUTHORSHIP_NOTE`` and its matching ``verify_all`` check."""
+    from claimscene.provenance import AUTHORSHIP_NOTE
+
+    result = _run(pipeline, photos)
+    ill = result.manifest["illustration"]
+    assert ill["authorship_note"] == AUTHORSHIP_NOTE
+    lowered = ill["authorship_note"].lower()
+    assert "computed deterministically" in lowered
+    assert "model" in lowered
+    assert "not reliably preserve" in lowered
+    assert "reconstruction" in lowered

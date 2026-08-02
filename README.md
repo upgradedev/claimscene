@@ -33,11 +33,19 @@ every case into two layers and never lets them blur:
 2. **The illustration layer.** A short video clip animating the case's own
    deterministic schematic: the seed image is a raster of that schematic
    (the impact-frame render), not a generated still, so the clip's geometry
-   is inherited from the factual layer instead of invented. Prompted in a
-   deliberately computer-generated forensic-reconstruction register that
-   states plainly it is not a real recording, watermarked deterministically
-   after generation and sealed in the manifest as an illustration. The
-   `degraded` flag honestly records whether a real provider generated it.
+   is inherited from the factual layer instead of invented, and the camera
+   push toward the point of impact is computed by us too, never requested
+   from the model. What we cannot inherit is the model's rendering of that
+   layout: repeated live renders showed the image-to-video model does not
+   reliably preserve the seeded placement, so the clip's visual style
+   (lighting, shading, material look) is the model's real contribution, not
+   its geometry. Prompted in a deliberately computer-generated
+   forensic-reconstruction register that states plainly it is not a real
+   recording, watermarked deterministically after generation and sealed in
+   the manifest as an illustration. The manifest states this division of
+   authorship once, in plain language (`illustration.authorship_note`), and
+   the `degraded` flag honestly records whether a real provider generated
+   it.
 
 A tamper-evident manifest chains both layers, every input photo (with its
 `source`, `attribution`, and `license`), and every hash. Re-badge a licensed
@@ -218,7 +226,10 @@ python scripts/readiness.py --min 0
 - `scene_graph`, `timeline`, `report` — hashes of the factual layer.
 - `schematic` — SVG/PNG/MP4 hashes, frame count, and the watermark string.
 - `illustration` — provider, clip model/prompt/hash, still
-  model/prompt/hash, and the honest `degraded` flag.
+  model/prompt/hash, the honest `degraded` flag, and `authorship_note`: one
+  plain statement of what is computed (geometry, camera path, disclosure)
+  versus what the model actually contributes (visual style only, no
+  placement guarantee).
 - `disclosure` — the exact string `AI-generated illustration — not evidence`.
 - `manifest_hash` — canonical-JSON SHA-256 over all of the above. Any edit,
   including re-badging an input's source, breaks verification.

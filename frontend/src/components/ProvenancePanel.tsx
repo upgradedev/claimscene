@@ -5,6 +5,7 @@ import {
   Database,
   FileCheck2,
   Loader2,
+  Scale,
   ShieldAlert,
   ShieldCheck,
   UserCheck,
@@ -141,6 +142,21 @@ export function ProvenancePanel({ result }: { result: RenderResponse }) {
           )}
         </div>
       </div>
+
+      {/* Authorship split: the sealed, provable half of the two-layer
+          thesis -- what this codebase computed versus what the generative
+          model actually contributed. Absent on a manifest sealed before
+          this field existed (older cases stay honestly silent, not wrong). */}
+      {manifest?.illustration.authorship_note && (
+        <div className="mt-4 rounded border border-cyan-400/20 bg-cyan-400/[0.03] p-3">
+          <p className="label-caps mb-1.5 flex items-center gap-1.5">
+            <Scale className="h-3.5 w-3.5 text-cyan-400" /> authorship split · sealed
+          </p>
+          <p className="text-[11px] leading-relaxed text-blueprint-dim">
+            {manifest.illustration.authorship_note}
+          </p>
+        </div>
+      )}
 
       {/* Server-side named-check receipt (shown after Verify). */}
       {verify.phase === "done" && <VerificationChecks checks={verify.checks} />}

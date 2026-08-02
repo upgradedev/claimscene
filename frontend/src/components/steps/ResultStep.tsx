@@ -38,11 +38,13 @@ export function ResultStep({ result }: { result: RenderResponse }) {
       {/* Media: factual schematic + disclosed illustration, side by side.
           grid-cols-1 base keeps the single mobile column container-bounded. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Factual layer */}
+        {/* Factual layer: presented as the reconstruction, ranked first --
+            the AI clip alongside it is the illustration, never the reverse
+            (see provenance.AUTHORSHIP_NOTE and the Provenance panel below). */}
         <figure className="sheet overflow-hidden">
           <figcaption className="flex items-center justify-between border-b border-steel-700/70 px-3 py-1.5">
             <span className="label-caps flex items-center gap-1.5">
-              <Ruler className="h-3 w-3 text-cyan-400" /> Factual layer · schematic
+              <Ruler className="h-3 w-3 text-cyan-400" /> Reconstruction · schematic
             </span>
             <Badge variant="amber">deterministic</Badge>
           </figcaption>

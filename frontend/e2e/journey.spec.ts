@@ -69,8 +69,8 @@ test("reviewer completes the whole journey and every step becomes visible", asyn
   // ── Step 4: sealed case ───────────────────────────────────────────────────────
   await expect(stepRegion(page, 4)).toHaveCSS("opacity", "1");
   await expect(page.getByRole("heading", { name: /Case sealed/i })).toBeVisible();
-  // Both layers are on screen: the factual schematic + the disclosed illustration.
-  await expect(page.getByText(/Factual layer . schematic/i)).toBeVisible();
+  // Both layers are on screen: the factual reconstruction + the disclosed illustration.
+  await expect(page.getByText(/Reconstruction . schematic/i)).toBeVisible();
   await expect(page.getByText("AI ILLUSTRATION — NOT EVIDENCE")).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: /Incident report/i })).toBeVisible();
 
