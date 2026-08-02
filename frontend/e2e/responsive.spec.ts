@@ -7,9 +7,11 @@ import { installApiMocks } from "./_mocks";
  *  - No horizontal overflow at 375 / 768 / 1280 on the landing page and through
  *    the wizard.
  *  - Primary controls are ≥44×44px on mobile (WCAG 2.5.5), and every other
- *    interactive control clears the 24px AA floor (WCAG 2.5.8). The dense
- *    review micro-controls (12-position clock, per-field dropdowns) are 24px by
- *    construction and are covered by the AA floor, not the 44px primary check.
+ *    interactive control clears the 24px AA floor (WCAG 2.5.8). The 12-position
+ *    clock (impact + damage) is also ≥44×44 -- it is the review step's most
+ *    consequential input, entered on a phone -- via a transparent 44x44 hit
+ *    target around a small visual dot (see ClockPicker.tsx). Per-field
+ *    dropdowns stay covered by the 24px AA floor only.
  *  - Both hero CTAs show a visible focus ring under keyboard focus.
  */
 
@@ -71,6 +73,47 @@ test("primary controls are >=44px tap targets on mobile (375)", async ({ page })
   await page.getByRole("button", { name: /Try a sample scenario/i }).click();
   await atLeast44(page.getByRole("button", { name: /Browse files/i }), "Browse files");
   await atLeast44(page.getByRole("button", { name: /Extract scene/i }), "Extract scene CTA");
+});
+
+test("review step: every 12-position clock radio is a >=44px tap target on mobile (375)", async ({ page }) => {
+  // The most consequential input in the case (impact point / damage zone),
+  // entered on a phone at a roadside -- flagged as under the comfortable
+  // minimum at the old 24px size. ClockPicker.tsx now wraps a small visual
+  // dot in a 44x44 hit target; this asserts the real rendered box for EVERY
+  // position on EVERY clock on the step, not just a sample.
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Try a sample scenario/i }).click();
+  await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
+  await page.getByRole("button", { name: /Extract scene/i }).click();
+  await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i })).toBeVisible();
+
+  const groups = page.getByRole("radiogroup");
+  const groupCount = await groups.count();
+  expect(groupCount, "at least one clock renders").toBeGreaterThan(0);
+
+  let radiosChecked = 0;
+  for (let g = 0; g < groupCount; g++) {
+    const radios = groups.nth(g).getByRole("radio");
+    const radioCount = await radios.count();
+    expect(radioCount, `clock #${g} has 12 positions`).toBe(12);
+    for (let i = 0; i < radioCount; i++) {
+      const radio = radios.nth(i);
+      const box = await radio.boundingBox();
+      expect(box, `clock #${g} position #${i} has a box`).not.toBeNull();
+      // 0.5px tolerance mirrors the 23.5-for-24 floor below: `h-11` (2.75rem)
+      // is exactly 44px, but a percentage-positioned, translate(-50%,-50%)
+      // element can report a bounding box a fraction of a px short (observed:
+      // 43.9998779296875) from sub-pixel rounding during compositing, not a
+      // real size difference.
+      expect(box!.width, `clock #${g} position #${i} width >=44 (got ${box!.width})`).toBeGreaterThanOrEqual(43.5);
+      expect(box!.height, `clock #${g} position #${i} height >=44 (got ${box!.height})`).toBeGreaterThanOrEqual(43.5);
+      radiosChecked += 1;
+    }
+  }
+  expect(radiosChecked, "checked every clock position on the step").toBeGreaterThanOrEqual(24);
+
+  await assertNoHorizontalOverflow(page, "review-with-grown-clocks@375");
 });
 
 test("secondary interactive controls clear the 24px AA floor on mobile (375)", async ({ page }) => {

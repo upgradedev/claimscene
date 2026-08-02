@@ -169,7 +169,8 @@ export function SourceStep() {
             <ImagePlus className="h-4 w-4" /> Browse files
           </Button>
           <p className="mt-3 font-mono text-xs text-blueprint-dim">
-            JPG / PNG / WebP · your photos never leave the request that seals your case
+            JPG / PNG / WebP · photos are stored with your case, content-addressed, so it
+            can be re-verified later
           </p>
           <input
             ref={inputRef}

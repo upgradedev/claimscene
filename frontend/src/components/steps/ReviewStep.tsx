@@ -1,4 +1,4 @@
-import { ArrowLeft, Crosshair, Lock, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Crosshair, Lock, Plus, Trash2 } from "lucide-react";
 import {
   APPROACHES,
   DAMAGE_SEVERITIES,
@@ -96,6 +96,21 @@ export function ReviewStep() {
         <span className="ml-auto">
           <Badge variant="amber">source: {sourceLabel(extraction)}</Badge>
         </span>
+      </div>
+
+      {/* What confirming here does and doesn't prove -- reuses the
+          DisclosureBanner's amber/#1c1608 styling so it reads as the same
+          honesty line, not a separate warning. */}
+      <div className="mb-6 flex items-start gap-2.5 rounded border border-amber-400/30 bg-[#1c1608] px-4 py-2.5">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden />
+        <p className="font-mono text-xs leading-relaxed tracking-wide text-amber-200">
+          <span className="font-semibold">Confirming a field is not the same as verifying it.</span>{" "}
+          <span className="text-amber-200/70">
+            This case records what you confirm here, or what the AI proposed and you leave
+            unchanged, not a verified account of the accident. It is not an official police
+            report and does not establish fault.
+          </span>
+        </p>
       </div>
 
       {/* grid-cols-1 at the base pins the single mobile column to minmax(0,1fr)
@@ -227,7 +242,7 @@ function VehicleEditor({
         <ClockPicker
           value={struck}
           allowNone
-          size={112}
+          size={176}
           ariaLabel={`Impact clock position for ${vehicle.id}`}
           onChange={(clock) => onChange(setImpact(scene, vehicle.id, clock))}
         />
@@ -247,14 +262,18 @@ function VehicleEditor({
         <div className="space-y-3">
           {vehicle.damage.map((dz, i) => (
             <div key={i} className="rounded border border-steel-700 bg-steel-950/40 p-3">
-              <div className="flex items-start justify-between gap-3">
+              {/* flex-col on mobile: the clock face grew to 176px (>=44px tap
+                  targets) and no longer shares a row with the fields at
+                  375px width — sm:flex-row restores the side-by-side layout
+                  once there's room. */}
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
                 <ClockPicker
                   value={dz.clock_position}
-                  size={96}
+                  size={176}
                   ariaLabel={`Damage ${i + 1} clock position for ${vehicle.id}`}
                   onChange={(clock) => onChange(patchDamage(scene, vehicle.id, i, { clock_position: clock ?? 12 }))}
                 />
-                <div className="flex-1 space-y-2">
+                <div className="w-full flex-1 space-y-2 sm:w-auto">
                   <Field label="severity">
                     <Select value={dz.severity} options={SEVERITY_OPTS}
                             onChange={(v) => onChange(patchDamage(scene, vehicle.id, i, { severity: v as typeof dz.severity }))} />

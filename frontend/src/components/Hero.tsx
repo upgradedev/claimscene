@@ -21,7 +21,7 @@ export function Hero({ onStart }: { onStart: () => void }) {
         </Badge>
         <h1 className="mt-5 font-mono text-4xl font-bold leading-tight text-blueprint-text md:text-6xl">
           Two layers.<br />
-          <span className="text-amber-glow">One sealed truth.</span>
+          <span className="text-amber-glow">One verifiable seal.</span>
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-balance text-blueprint-dim md:text-lg">
           A deterministic top-down schematic is the <span className="text-blueprint-text">factual layer</span>.
