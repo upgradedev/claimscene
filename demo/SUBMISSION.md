@@ -77,7 +77,7 @@ The honest lesson came from the live path. Our contract tests run against the re
 - A measured accuracy number (100% on the committed set) instead of a vibe.
 - A human-in-the-loop review step that is the trust story and the production-readiness story at once.
 - A sealed AI→human approval receipt: the render seals the exact proposed→confirmed scene diff with a recomputable `decision_digest` that self-voids if the confirmed scene drifts, and the whole case re-verifies from stored bytes through a named-check receipt (`GET /cases/{id}/verify`) plus a detached, self-sealed receipt written as its own B2 object.
-- 290 backend tests plus 208 frontend tests, gitleaks, CodeQL and a machine-checkable readiness gate, all runnable with zero credentials.
+- 516 backend tests plus 296 frontend tests, gitleaks, CodeQL and a machine-checkable readiness gate, all runnable with zero credentials.
 
 ### What we learned
 Constrain the model to a vocabulary and let deterministic code do the geometry. Label the generative layer loudly. And make honesty a data structure: a sealed manifest that records sources and disclosure by construction, not a promise in the footer.

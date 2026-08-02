@@ -2,8 +2,8 @@ import { motion } from "framer-motion";
 import { ArrowRight, ShieldCheck, SlidersHorizontal, Sparkles } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-// A downscaled crop of the sealed live-evidence toy-diorama render
-// (eval/evidence/live_illustration/illustration.png) — the disclosed
+// A downscaled crop of a live app capture of the AI illustration panel
+// (demo/assets/claimscene-11-result-illustration.png), the disclosed
 // illustration layer, shown as a real example, not described.
 import heroIllustration from "@/assets/hero-illustration.jpg";
 
@@ -147,7 +147,7 @@ function IllustrationCard() {
           width={720}
           height={450}
           loading="lazy"
-          alt="Toy-diorama AI illustration of the same accident — a red car and a blue car at a traffic light, obviously a miniature model, not a real scene and not evidence."
+          alt="AI illustration panel from a live case: a top-down CGI render of a blue car and a red car side by side at a traffic light, captioned 'AI-generated illustration - not evidence'."
           className="h-full w-full object-cover"
         />
         <div className="absolute left-0 right-0 top-0 flex items-center justify-center gap-1.5 bg-gradient-to-b from-black/80 to-transparent py-1.5 font-mono text-[10px] font-semibold tracking-wide text-amber-200">

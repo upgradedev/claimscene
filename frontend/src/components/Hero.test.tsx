@@ -26,7 +26,7 @@ describe("Hero", () => {
     expect(screen.getByRole("heading", { level: 2, name: /two layers, side by side/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: /why you can trust it/i })).toBeInTheDocument();
     // The disclosed illustration is a real rendered frame (not a placeholder)…
-    expect(screen.getByRole("img", { name: /toy-diorama AI illustration/i })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /AI illustration panel from a live case/i })).toBeInTheDocument();
     // …paired with the deterministic schematic image.
     expect(screen.getByRole("img", { name: /top-down schematic/i })).toBeInTheDocument();
   });

@@ -51,7 +51,7 @@ A tamper-evident manifest chains both layers, every input photo (with its
 `source`, `attribution`, and `license`), and every hash. Re-badge a licensed
 photo as a user upload and verification fails.
 
-![The two layers side by side: the deterministic top-down SCHEMATIC (factual layer, left) next to the Genblaze ILLUSTRATION clip stamped "ILLUSTRATION NOT EVIDENCE" (disclosed AI layer, right) — sealed in the same manifest, never blended](demo/assets/claimscene-04-schematic.png)
+![Live app screenshot of the result view: the deterministic Reconstruction Schematic panel (left, labeled deterministic) next to the AI Illustration panel (right, labeled not evidence) showing a blue car and a red car side by side at a traffic light, both sealed in the same manifest and never blended](demo/assets/claimscene-04-schematic.png)
 
 ## Pipeline
 
@@ -198,7 +198,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 pip install -e ".[server]"      # [server] adds the API (fastapi + multipart)
 
-pytest                          # 290 offline backend tests
+pytest                          # 516 offline backend tests
 python -m claimscene.cli --case demo --out out
 ```
 
@@ -234,7 +234,7 @@ python scripts/readiness.py --min 0
 - `manifest_hash` — canonical-JSON SHA-256 over all of the above. Any edit,
   including re-badging an input's source, breaks verification.
 
-![The sealed provenance manifest: per-input source and license attribution rows, the source vocabulary (user_upload / staged_demo / public_domain / licensed / synthetic_generated), the illustration layer's provider/model/degraded fields, and the manifest_hash recomputed in-browser next to a Verify button](demo/assets/claimscene-05-provenance.png)
+![Live app screenshot of the Provenance panel: the manifest seal hash next to a Verify in browser button, the Backblaze B2 storage and illustration provider/model fields, and the sealed Authorship Split explanation of what the model contributed versus what was computed deterministically](demo/assets/claimscene-05-provenance.png)
 
 ## How Backblaze B2 is used
 
@@ -376,7 +376,7 @@ desynced or over-length video fails the build.
 
 ## Testing & CI
 
-- **290 offline backend tests** (unit / integration / e2e): schema
+- **516 offline backend tests** (unit / integration / e2e): schema
   round-trips and rejection of hallucinated fields, layout determinism and
   contact-geometry properties, golden-file SVG, provenance seal/tamper, real
   B2 adapter against an S3 stub (**+ a presign contract test asserting SigV4 +
@@ -385,7 +385,7 @@ desynced or over-length video fails the build.
   SDK-boundary contract tests, and the **full API chain** through FastAPI's
   TestClient (extract → preview → render → get → verify → playback, honest
   degrade, path sanitisation, 422s).
-- **208 frontend tests** (Vitest): the review-panel edit logic, the
+- **296 frontend tests** (Vitest): the review-panel edit logic, the
   schematic-preview live-update wiring, the ReviewStep centrepiece render, the
   **ExtractProgress** extract-latency UI, the playback-url selection, and the
   in-browser verify pinned to a **golden manifest produced by the real backend**
