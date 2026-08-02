@@ -32,6 +32,21 @@ def test_health_reports_effective_backends():
     assert body["provider"] == "fake-media"
     assert body["extractor"] == "fake-vision"
     assert body["storage"] == "InMemoryStorage"
+    # Build provenance is always present in the shape, and honestly null when
+    # the app was not built through the image pipeline (as here, and in CI).
+    assert body["build"] == {"commit": None, "built_at": None}
+
+
+def test_health_reports_the_commit_the_image_was_built_from(monkeypatch):
+    """Anyone must be able to confirm a deployment really is the commit they
+    are reading, with one request and no access to the project."""
+    monkeypatch.setenv("CLAIMSCENE_BUILD_SHA", "c0ffee1234567890")
+    monkeypatch.setenv("CLAIMSCENE_BUILD_TIME", "2026-08-02T19:00:00Z")
+    body = client.get("/health").json()
+    assert body["build"] == {
+        "commit": "c0ffee1234567890",
+        "built_at": "2026-08-02T19:00:00Z",
+    }
 
 
 def test_scenarios_are_listed_for_zero_photo_demo():

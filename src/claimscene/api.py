@@ -549,6 +549,25 @@ def _tenant_storage(uid: str | None) -> StorageBackend:
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
+def _build_info() -> dict:
+    """Which commit the running image was built from, and when.
+
+    Baked into the image at build time (see ``Dockerfile`` and
+    ``deploy/cloudbuild.yaml``), so anyone can confirm that a deployment really
+    is the commit they are reading on GitHub, without access to the project:
+
+        curl -s <url>/health | jq -r .build.commit
+
+    Both values are ``None`` when the app was not built through that path (a
+    local run, or CI), which is the honest answer rather than a fabricated one.
+    A commit hash is public information, so exposing it leaks nothing.
+    """
+    return {
+        "commit": os.environ.get("CLAIMSCENE_BUILD_SHA") or None,
+        "built_at": os.environ.get("CLAIMSCENE_BUILD_TIME") or None,
+    }
+
+
 @app.get("/health")
 def health() -> dict:
     return {
@@ -560,6 +579,7 @@ def health() -> dict:
         "provider": _provider.name,
         "extractor": _extractor.name,
         "storage": type(_storage).__name__,
+        "build": _build_info(),
     }
 
 

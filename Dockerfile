@@ -38,9 +38,17 @@ COPY eval/scenarios ./eval/scenarios
 # Compiled web client (index.html lives inside dist/).
 COPY --from=web /web/dist ./web
 
+# Stamped by the build so GET /health can report which commit is actually
+# running (see api._build_info). Empty by default, which /health reports as
+# null rather than guessing.
+ARG CLAIMSCENE_BUILD_SHA=""
+ARG CLAIMSCENE_BUILD_TIME=""
+
 ENV CLAIMSCENE_MODE=offline \
     CLAIMSCENE_WEB_DIR=/app/web \
     CLAIMSCENE_SCENARIOS_DIR=/app/eval/scenarios \
+    CLAIMSCENE_BUILD_SHA=${CLAIMSCENE_BUILD_SHA} \
+    CLAIMSCENE_BUILD_TIME=${CLAIMSCENE_BUILD_TIME} \
     PORT=8000
 EXPOSE 8000
 

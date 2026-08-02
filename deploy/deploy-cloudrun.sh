@@ -71,9 +71,18 @@ if ! gcloud artifacts repositories describe "${AR_REPO}" \
 fi
 
 # ── 3. Build the image with Cloud Build ──────────────────────────────────────
+# Stamp the commit being built so GET /health can prove which one is live.
+# Falls back to "unknown" outside a git checkout rather than inventing a hash.
+BUILD_SHA="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
+if ! git -C "${REPO_ROOT}" diff --quiet HEAD 2>/dev/null; then
+  BUILD_SHA="${BUILD_SHA}-dirty"   # honest: the tree did not match the commit
+fi
+BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "▶ build sha=${BUILD_SHA} time=${BUILD_TIME}"
+
 gcloud builds submit "${REPO_ROOT}" \
   --config "${REPO_ROOT}/deploy/cloudbuild.yaml" \
-  --substitutions "_IMAGE=${IMAGE}" \
+  --substitutions "_IMAGE=${IMAGE},_BUILD_SHA=${BUILD_SHA},_BUILD_TIME=${BUILD_TIME}" \
   --project "${PROJECT_ID}"
 
 # ── 4. Runtime config: non-secrets as env vars, secrets from Secret Manager ──
