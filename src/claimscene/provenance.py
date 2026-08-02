@@ -29,6 +29,30 @@ REVIEW_SCHEMA = "claimscene/review/v1"
 RECEIPT_SCHEMA = "claimscene/receipt/v1"
 DISCLOSURE = "AI-generated illustration — not evidence"
 WATERMARK = "ILLUSTRATION — NOT EVIDENCE"
+#: The two-layer thesis, stated once as a single explicit claim rather than
+#: left for a reader to infer from ``still_source``/``camera_move_source``/
+#: ``watermark_burned`` separately. Measured, not assumed: repeated live
+#: renders (see ``camera.py`` and ``pipeline.py`` step 5's own docstrings)
+#: showed the image-to-video model does not reliably preserve the layout of
+#: the seed image it is given, so anything that must be correct is computed
+#: by this codebase -- the model is trusted with visual style only. Sealed
+#: into ``illustration.authorship_note`` by ``pipeline.py`` and structurally
+#: re-verified by ``verify_all`` below (absence-tolerant for a manifest
+#: sealed before this field existed; exact-match once present).
+AUTHORSHIP_NOTE = (
+    "Division of authorship, stated plainly so a reader of this manifest "
+    "can tell exactly which claims are provable. The vehicle geometry this "
+    "clip is seeded with, the camera path applied to it, and this "
+    "disclosure caption are all computed deterministically from the case's "
+    "own sealed record, never invented by the generative model (see "
+    "illustration.still_source, illustration.camera_move_source and "
+    "watermark_burned). What the model actually contributes is the clip's "
+    "rendered visual style only -- lighting, shading, material look. "
+    "Measured across repeated live renders, not assumed: the model does "
+    "not reliably preserve the exact vehicle placement it was seeded with. "
+    "Treat the schematic above as the reconstruction and this clip as a "
+    "stylised illustration of it, never the reverse."
+)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -263,6 +287,15 @@ def verify_all(
         watermark, not a second hard requirement -- see ``camera.py``); a
         manifest sealed before this feature existed, or with no camera-move
         record at all, passes with nothing to re-verify;
+      * ``structural.illustration_authorship`` -- when the manifest seals an
+        authorship statement (``illustration.authorship_note``), it must
+        match the sealed ``AUTHORSHIP_NOTE`` exactly: what this codebase
+        computed (the seed geometry, the camera path, the disclosure
+        caption) versus what the generative model actually contributed
+        (visual style only, no placement guarantee); a manifest sealed
+        before this field existed, or with none at all, passes with nothing
+        to re-verify -- absence is not the same as a dishonest omission,
+        exactly like the camera-move check directly above;
       * ``review.decision_digest`` — the approval receipt recomputes from its
         sealed proposed/confirmed hashes and stays bound to the sealed scene.
 
@@ -419,6 +452,26 @@ def verify_all(
     record("structural.illustration_camera_move",
            "Camera-move outcome honestly recorded (success is never required)",
            _camera_move)
+
+    def _authorship() -> tuple[bool, str]:
+        illustration = manifest.get("illustration") or {}
+        note = illustration.get("authorship_note")
+        if note is None:
+            # Absence-tolerant, mirroring _camera_move() directly above: a
+            # manifest sealed before this field existed has nothing to
+            # re-verify here -- that is not the same as a dishonest
+            # omission. Once a case DOES seal a statement, it is held to
+            # the exact wording below (no partial credit for a rewritten or
+            # softened claim).
+            return True, "no authorship statement sealed (nothing to re-verify)"
+        ok = note == AUTHORSHIP_NOTE
+        return ok, ("illustration.authorship_note matches the sealed statement exactly"
+                    if ok else "illustration.authorship_note is present but altered "
+                    "from the sealed statement")
+
+    record("structural.illustration_authorship",
+           "Illustration authorship split (computed vs model-authored) sealed exactly",
+           _authorship)
 
     def _review() -> tuple[bool, str]:
         review = manifest.get("review")

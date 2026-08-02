@@ -127,6 +127,32 @@ describe("ProvenancePanel — review ledger", () => {
   });
 });
 
+describe("ProvenancePanel — authorship split", () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
+
+  it("shows the sealed authorship split when the manifest carries one", async () => {
+    const base = baseManifest();
+    mount({
+      ...base,
+      illustration: {
+        ...base.illustration,
+        authorship_note:
+          "Division of authorship: the geometry and camera path are computed; " +
+          "the model contributes visual style only.",
+      },
+    });
+    expect(await screen.findByText(/authorship split/i)).toBeInTheDocument();
+    expect(screen.getByText(/Division of authorship/i)).toBeInTheDocument();
+  });
+
+  it("omits the authorship block on a manifest sealed before the field existed", async () => {
+    mount(baseManifest());
+    await screen.findByText("view_a.jpg"); // manifest loaded, no crash either way
+    expect(screen.queryByText(/authorship split/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("ProvenancePanel — server-side named-check receipt", () => {
   beforeEach(() => vi.restoreAllMocks());
   afterEach(() => vi.clearAllMocks());

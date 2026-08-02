@@ -35,7 +35,7 @@ ClaimScene turns accident photos into a documented case:
 
 1. **Extract.** A vision-language model reads the photos into a strict, constrained scene description: vehicles and their damage (by clock position), the road layout, each vehicle's approach and maneuver, and the impact points. No free-form coordinates, only a fixed vocabulary the model must answer in.
 2. **Review and adjust.** You see the extracted scene and correct it with simple controls (dropdowns, a 12-position clock picker), and a top-down schematic redraws live as you edit. The AI proposes; you confirm. Nothing is generated from an unreviewed guess.
-3. **Render.** A deterministic layout engine turns the confirmed scene into an animated top-down schematic, the factual layer, watermarked "ILLUSTRATION — NOT EVIDENCE" on every frame. Then Genblaze generates a cinematic establishing still and a short illustration clip, both clearly disclosed as AI-generated.
+3. **Render.** A deterministic layout engine turns the confirmed scene into an animated top-down schematic, the factual layer, watermarked "ILLUSTRATION — NOT EVIDENCE" on every frame. Genblaze then animates that same schematic into a short illustration clip: the seed image is the schematic's own impact-frame render, so the clip's geometry is inherited, not invented, and the camera push toward the point of impact is computed by us from the same Timeline, never left to the model. What the model actually contributes is visual style; repeated live renders proved it does not reliably preserve the seeded layout, so the manifest states that division of authorship once, in plain language, and the disclosure is burned into the clip's own pixels after generation, not just requested in the prompt.
 4. **Seal.** Every input photo, the schematic, the illustration, and an incident report are stored content-addressed on Backblaze B2 and sealed into a SHA-256 manifest that records, per input, where it came from (uploaded, staged, public-domain, or synthetic) and its license. You can re-verify the seal in the browser.
 
 The public demo runs on synthetic and staged photos only. No real accident imagery or personal data.
@@ -52,9 +52,10 @@ The anti-hallucination core is the constrained vocabulary. We never ask the mode
 - The live playback route mints fresh presigned GET URLs per request (region and SigV4 correct), so nothing signed is ever stored and the manifest hashes stay canonical.
 
 ### How it uses Genblaze
-- Illustration generation is a real Genblaze Pipeline: an establishing still (`seedream-5.0-lite`) whose hosted output chains as the input to an image-to-video clip (`pixverse-v6-i2v` by default, `Kling-Image2Video-V2.1-Master` as a premium option).
+- Illustration generation is a real Genblaze Pipeline: an image-to-video clip (`pixverse-v6-i2v` by default, `Kling-Image2Video-V2.1-Master` as a premium option) seeded by a raster of the case's own deterministic schematic, not a second generated still. A live render proved a diffusion model does not reliably preserve the layout it is seeded with, so the geometry, the camera path and the disclosure caption are all computed by us instead; the model's real contribution is the clip's rendered visual style.
 - Genblaze's ObjectStorageSink content-addresses each generated asset, persists it to B2, and seals a per-asset SHA-256 manifest, which ClaimScene folds into the case-level manifest.
 - Every Genblaze call is contract-tested in CI against the published SDK, including an assertion that input assets actually reach the pipeline step, so API drift fails the build instead of the demo.
+- The sealed manifest states this division of authorship once, in plain language (`illustration.authorship_note`): what we compute versus what the model actually contributes, with no placement guarantee. A judge can read that claim straight from the manifest or the app's Provenance panel, and it is structurally re-verified the same way the disclosure and watermark are.
 
 ### AI providers and models used
 | Role | Model | Provider |
@@ -62,8 +63,8 @@ The anti-hallucination core is the constrained vocabulary. We never ask the mode
 | Scene extraction (primary) | google/gemma-4-31b-it | GMI Cloud |
 | Scene extraction (fallback) | google/gemini-3.5-flash | GMI Cloud |
 | Scene extraction (independent fallback) | Qwen/Qwen2.5-VL-72B-Instruct | Nebius |
-| Establishing still | seedream-5.0-lite | GMI Cloud via Genblaze |
-| Illustration clip (image-to-video) | pixverse-v6-i2v (default) / Kling-Image2Video-V2.1-Master (premium) | GMI Cloud via Genblaze |
+| Illustration seed (top-down schematic raster) | none, deterministic `PillowSchematicRenderer` | in-process (no model call) |
+| Illustration clip (image-to-video from the schematic seed) | pixverse-v6-i2v (default) / Kling-Image2Video-V2.1-Master (premium) | GMI Cloud via Genblaze |
 
 ### Measured extraction accuracy
 The primary VLM (`google/gemma-4-31b-it`) scores **100% weighted field accuracy** on a committed 7-scenario evaluation set: vehicle count, kind and color, road layout and signal, approach and maneuver, and damage and impact clock positions within one hour. The eval set is staged toy-diorama photos (three consistent seedream-rendered views per scenario) with hand-authored ground truth, sealed as synthetic_generated. It is self-consistent by construction, and we say so in the README, but it makes the accuracy claim reproducible from the repo.
@@ -87,7 +88,7 @@ First-notice-of-loss integrations, multi-incident case files, a reviewer audit t
 ## Additional info (judges/organizers)
 - App URL: https://claimscene-147595510158.europe-west1.run.app
 - GitHub repo URL: https://github.com/upgradedev/claimscene
-- Providers and models: see the table above (GMI Cloud gemma-4-31b-it / gemini-3.5-flash, Nebius Qwen2.5-VL-72B, seedream-5.0-lite, pixverse-v6-i2v, Kling-Image2Video-V2.1-Master).
+- Providers and models: see the table above (GMI Cloud gemma-4-31b-it / gemini-3.5-flash, Nebius Qwen2.5-VL-72B, pixverse-v6-i2v, Kling-Image2Video-V2.1-Master).
 - B2 and Genblaze usage: see the two sections above.
 
 ## Owner checklist (not done here)
@@ -100,9 +101,11 @@ Already done (verified 2026-07-23): the `claimscene` B2 bucket and a
 write-entitled, scoped application key are provisioned, and the live app is
 deployed on Cloud Run rendering real Genblaze output straight to B2
 (`storage=B2Storage`) — a live case wrote a real seedream still and pixverse
-clip to the bucket. (If the entitled key is ever absent, live mode degrades
-storage to the in-memory object store rather than failing — a documented
-fallback, not the current state.)
+clip to the bucket (that still-generation step was later replaced by the
+schematic-seeded illustration described above; this line is a historical
+record of that date's mechanism, not the current one). (If the entitled key
+is ever absent, live mode degrades storage to the in-memory object store
+rather than failing — a documented fallback, not the current state.)
 
 ## Relationship to our other entry
 ClaimScene shares an in-house Backblaze B2 storage and provenance-sealing foundation with our other submission, Cinemory (cinematic memory reels). The two are different products: different domain, different data model, different extraction and layout pipeline, and a different UI. This is disclosed here and in the README.

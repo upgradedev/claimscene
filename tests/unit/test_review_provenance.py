@@ -14,6 +14,7 @@ from claimscene.case import CasePhoto, CaseSpec, PhotoSource, ReviewClassificati
 from claimscene.evaluation import diff_scenes, review_counts
 from claimscene.pipeline import CasePipeline
 from claimscene.provenance import (
+    AUTHORSHIP_NOTE,
     DISCLOSURE,
     WATERMARK,
     build_manifest,
@@ -469,3 +470,44 @@ def test_camera_move_check_flips_when_applied_is_not_a_boolean():
     wrong_type["illustration"]["camera_move_applied"] = "yes"
     receipt = verify_all(wrong_type, _fetcher(storage, result))
     assert _check(receipt, "structural.illustration_camera_move")["passed"] is False
+
+
+# ── verify_all: illustration authorship split (see provenance.AUTHORSHIP_NOTE) ──
+def test_authorship_check_present_and_passes_on_a_good_sealed_case():
+    storage, result = _sealed(proposed=_scene())
+    assert result.manifest["illustration"]["authorship_note"] == AUTHORSHIP_NOTE
+    receipt = verify_all(result.manifest, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_authorship")["passed"] is True
+
+
+def test_authorship_check_is_absence_tolerant():
+    """A manifest sealed before this field existed (no ``authorship_note`` at
+    all -- the same minimal shape ``build_manifest`` accepts elsewhere in
+    this file) has nothing to re-verify here: passes, not a failure --
+    mirrors ``test_camera_move_check_is_absence_tolerant`` above, since a
+    live manifest sealed before this PR is honest, not dishonest, about a
+    field it never claimed."""
+    manifest = build_manifest(
+        case_id="c", inputs=[{"source": "staged_demo"}],
+        scene_graph_sha256=sha256_bytes(b"s"), timeline_sha256=sha256_bytes(b"t"),
+        schematic={"static_svg_sha256": sha256_bytes(b"svg"),
+                   "hero_png_sha256": sha256_bytes(b"h"), "frame_count": 2, "fps": 8,
+                   "animation_sha256": None, "watermark": WATERMARK},
+        illustration={"provider": "fake-media", "model": "m", "prompt": "p",
+                      "sha256": sha256_bytes(b"c"), "degraded": True},
+        report_sha256=sha256_bytes(b"r"), created_at="2026-07-23T00:00:00+00:00")
+    receipt = verify_all(manifest, lambda name: {
+        "scene_graph": b"s", "timeline": b"t", "schematic_svg": b"svg",
+        "schematic_hero": b"h", "illustration": b"c", "report": b"r"}.get(name))
+    check = _check(receipt, "structural.illustration_authorship")
+    assert check["passed"] is True
+    assert "nothing to re-verify" in check["evidence"].lower()
+
+
+def test_authorship_check_flips_when_the_sealed_statement_is_altered():
+    storage, result = _sealed(proposed=_scene())
+    tampered = json.loads(json.dumps(result.manifest))
+    tampered["illustration"]["authorship_note"] = "trust us, the clip is accurate"
+    receipt = verify_all(tampered, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_authorship")["passed"] is False
+    assert receipt.success is False

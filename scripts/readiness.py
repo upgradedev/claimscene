@@ -435,6 +435,55 @@ def check_genblaze_illustration_port_sealed() -> tuple[bool, str]:
     return True, "illustration sealed with provider/model/prompt + honest degraded flag"
 
 
+def check_honest_illustration_authorship_sealed() -> tuple[bool, str]:
+    """The manifest states the illustration's authorship split in plain
+    language: what this codebase computes (the seed geometry, the camera
+    path, the disclosure caption) versus what the generative model actually
+    contributes (rendered visual style only, with no placement guarantee).
+
+    Structurally asserted the same way the disclosure and source-attribution
+    fields are: a fresh render must seal the field exactly (this check, real
+    pipeline evidence, never absence-tolerant -- unlike ``verify_all``'s own
+    matching check, which stays absence-tolerant for a manifest sealed
+    before this field existed; see ``provenance.py``), and the note must
+    honestly name BOTH halves of the split, not just one. Then drives the
+    real ``verify_all`` receipt and proves a tampered statement flips its
+    matching check -- real evidence, not file existence."""
+    from claimscene.provenance import AUTHORSHIP_NOTE, verify_all
+
+    _storage, result = _standard_run()
+    ill = result.manifest["illustration"]
+    if ill.get("authorship_note") != AUTHORSHIP_NOTE:
+        return False, "illustration.authorship_note missing or not the sealed statement"
+    lowered = AUTHORSHIP_NOTE.lower()
+    if "computed" not in lowered and "deterministic" not in lowered:
+        return False, "authorship note does not name the computed half of the split"
+    if "model" not in lowered or "not reliably preserve" not in lowered:
+        return False, "authorship note does not honestly name the model-authored half"
+
+    def fetch(name: str) -> bytes | None:
+        ref = result.artifacts.get(name)
+        return _storage.get(ref.key) if ref is not None else None
+
+    receipt = verify_all(result.manifest, fetch)
+    check = next((c for c in receipt.checks
+                  if c["id"] == "structural.illustration_authorship"), None)
+    if check is None:
+        return False, "verify_all does not run an illustration-authorship check"
+    if not check["passed"]:
+        return False, f"illustration-authorship check failed on a good case: {check['evidence']}"
+
+    tampered = json.loads(json.dumps(result.manifest))
+    tampered["illustration"]["authorship_note"] = "trust us, it is fine"
+    flipped = next(c for c in verify_all(tampered, fetch).checks
+                   if c["id"] == "structural.illustration_authorship")
+    if flipped["passed"]:
+        return False, "altering the sealed authorship note did NOT flip the check"
+    return True, ("authorship_note sealed exactly, names both the computed and the "
+                  "model-authored halves honestly, and verify_all's matching check "
+                  "passes on a good case and fails when the statement is altered")
+
+
 def check_genblaze_sdk_contract() -> tuple[bool, str]:
     """The real Genblaze adapter drives a REAL genblaze_core Pipeline (the
     SDK's own mock provider) and the input-attachment path holds: the step
@@ -1051,6 +1100,10 @@ def build_criteria() -> list[Criterion]:
             Check("honest_media.source_attribution_sealed",
                   "Per-input source/attribution sealed; re-badging detected",
                   2, run=check_honest_source_attribution_sealed),
+            Check("honest_media.illustration_authorship_sealed",
+                  "Authorship split (computed vs model-authored) sealed exactly "
+                  "and structurally re-verified; tampering it flips the check",
+                  2, run=check_honest_illustration_authorship_sealed),
             Check("honest_media.sealed_approval_receipt",
                   "Sealed AI→human approval receipt: server diff, recomputable "
                   "digest, verify_all passes, self-voids on drift",

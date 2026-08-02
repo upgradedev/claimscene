@@ -172,6 +172,12 @@ export const ManifestSchema = z.object({
     still_prompt: z.string().optional(),
     still_sha256: z.string().optional(),
     degraded: z.boolean(),
+    // The two-layer thesis, stated once as a single explicit claim: what is
+    // computed by this codebase (geometry, camera path, disclosure caption)
+    // versus what the generative model actually contributes (visual style
+    // only, no placement guarantee). Optional so a manifest sealed before
+    // this field existed still parses (see provenance.AUTHORSHIP_NOTE).
+    authorship_note: z.string().optional(),
   }),
   report: z.object({ media_type: z.string(), sha256: z.string() }),
   // The review receipt is optional so back-compat manifests still parse.
