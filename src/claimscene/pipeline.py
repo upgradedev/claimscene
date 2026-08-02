@@ -7,6 +7,7 @@ path runs against the real adapters or the offline fakes.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 
 from .case import CaseSpec, ReviewClassification
@@ -25,7 +26,12 @@ from .provenance import (
     sha256_bytes,
     verify_all,
 )
-from .report import ILLUSTRATION_SEED_NOTE, build_report, illustration_prompt
+from .report import (
+    ILLUSTRATION_NEGATIVE_PROMPT,
+    ILLUSTRATION_SEED_NOTE,
+    build_report,
+    illustration_prompt,
+)
 from .scene import SceneGraph, scene_to_json, semantic_warnings
 from .schematic import PillowSchematicRenderer
 from .watermark import burn_clip_watermark, burn_still_watermark
@@ -181,10 +187,23 @@ class CasePipeline:
         #    primary storage backend for every other artifact too.
         still_raw = art.seed_png
         prompt = illustration_prompt(scene, timeline)
+        # ``seed``: derived from the seed raster's own bytes, so the same case
+        # asks the provider for the same clip every time. The raster is a pure
+        # function of the factual Timeline, which makes this reproducible from
+        # the sealed record rather than from a stored random number. Bounded to
+        # a positive 31-bit int, the range these APIs accept.
+        clip_seed = int(hashlib.sha256(still_raw).hexdigest()[:8], 16) % (2**31 - 1)
         illustration_raw = self.provider.generate(
             model=spec.illustration_model, prompt=prompt, modality="video",
             inputs=[still_raw],
-            params={"duration": 5, "quality": "360p"},
+            # ``negative_prompt`` names the failure mode measured on a live
+            # render (the camera pulling out until the vehicles were specks);
+            # this model exposes no motion or camera parameter, so naming the
+            # unwanted behaviour is the strongest lever available. See
+            # report.ILLUSTRATION_NEGATIVE_PROMPT.
+            params={"duration": 5, "quality": "360p",
+                    "negative_prompt": ILLUSTRATION_NEGATIVE_PROMPT,
+                    "seed": clip_seed},
         )
 
         still_burn = burn_still_watermark(still_raw)

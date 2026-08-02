@@ -496,3 +496,27 @@ ILLUSTRATION_SEED_NOTE = (
     "only on-image text. The illustration clip below is seeded from exactly "
     "these pixels, so its geometry is inherited, not requested."
 )
+
+#: Suppression list for the clip step, sent as the provider's
+#: ``negative_prompt``.
+#:
+#: Measured, not guessed: a live render on 2026-07-30 obeyed the seed's
+#: geometry but read "gentle camera parallax and a slow push" as licence for a
+#: dramatic fly-through, pulling so far out that the vehicles became specks on
+#: an empty road for roughly half the clip. The positive prompt already asks
+#: for restraint and that was not enough. ``pixverse-v6-i2v`` exposes no
+#: motion or camera-control parameter (verified against the SDK's own
+#: ``param_allowlist``), so naming the unwanted behaviour here is the strongest
+#: lever available: diffusion models suppress what a negative prompt names far
+#: more reliably than they honour a positive instruction not to do it.
+#:
+#: The trailing entries repeat the positive prompt's no-text rule. The clip
+#: must carry exactly one caption, the disclosure burned in deterministically
+#: afterwards by ``watermark.py``, never text the model invented.
+ILLUSTRATION_NEGATIVE_PROMPT = (
+    "zoom, zoom out, pull back, dolly out, wide shot, extreme wide shot, "
+    "aerial view, distant view, scale change, cars becoming small, "
+    "empty road, fast camera movement, shaky camera, cuts, scene change, "
+    "moving vehicles, vehicles changing position, text, labels, captions, "
+    "subtitles, watermark, logo"
+)
