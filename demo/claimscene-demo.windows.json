@@ -1,76 +1,76 @@
 {
   "fps": 30,
-  "total": 145.2,
+  "total": 155.067,
   "windows": [
     {
       "id": "01-hook",
       "section": 1,
       "start": 0.0,
-      "end": 14.7,
-      "dur": 14.7
+      "end": 15.733,
+      "dur": 15.733
     },
     {
       "id": "02-problem",
       "section": 2,
-      "start": 14.7,
-      "end": 31.133,
-      "dur": 16.433
+      "start": 15.733,
+      "end": 31.0,
+      "dur": 15.267
     },
     {
-      "id": "03-split",
+      "id": "03-photos",
       "section": 3,
-      "start": 31.133,
-      "end": 36.3,
-      "dur": 5.167
+      "start": 31.0,
+      "end": 47.7,
+      "dur": 16.7
     },
     {
-      "id": "04-factual",
+      "id": "04-review",
       "section": 3,
-      "start": 36.3,
-      "end": 55.033,
-      "dur": 18.733
+      "start": 47.7,
+      "end": 62.433,
+      "dur": 14.733
     },
     {
-      "id": "05-illustration",
-      "section": 3,
-      "start": 55.033,
-      "end": 68.867,
-      "dur": 13.833
-    },
-    {
-      "id": "06-review",
+      "id": "05-render",
       "section": 4,
-      "start": 68.867,
-      "end": 87.367,
-      "dur": 18.5
+      "start": 62.433,
+      "end": 76.867,
+      "dur": 14.433
     },
     {
-      "id": "07-provenance",
+      "id": "06-reveal",
+      "section": 4,
+      "start": 76.867,
+      "end": 96.9,
+      "dur": 20.033
+    },
+    {
+      "id": "07-authorship",
       "section": 5,
-      "start": 87.367,
-      "end": 104.9,
-      "dur": 17.533
+      "start": 96.9,
+      "end": 118.767,
+      "dur": 21.867
     },
     {
-      "id": "08-measured",
-      "section": 6,
-      "start": 104.9,
-      "end": 117.233,
-      "dur": 12.333
+      "id": "08-verify",
+      "section": 5,
+      "start": 118.767,
+      "end": 130.067,
+      "dur": 11.3
     },
     {
-      "id": "09-stack",
+      "id": "09-measured",
       "section": 6,
-      "start": 117.233,
-      "end": 135.833,
-      "dur": 18.6
+      "start": 130.067,
+      "end": 142.633,
+      "dur": 12.567
     },
     {
       "id": "10-close",
       "section": 7,
-      "start": 135.833,
-      "end": 145.2,
-      "dur": 9.367
+      "start": 142.633,
+      "end": 155.067,
+      "dur": 12.433
     }
   ]
 }
