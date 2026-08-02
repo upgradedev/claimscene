@@ -14,11 +14,17 @@ requirement actually applies.
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 from PIL import Image
 
-from claimscene.adapters.fakes import FakeVisionExtractor, InMemoryStorage, _scene_rear_end
+from claimscene.adapters.fakes import (
+    FakeMediaProvider,
+    FakeVisionExtractor,
+    InMemoryStorage,
+    _scene_rear_end,
+)
 from claimscene.case import CasePhoto, CaseSpec, PhotoSource
 from claimscene.layout import LayoutEngine
 from claimscene.pipeline import CasePipeline
@@ -181,3 +187,59 @@ def test_pipeline_fail_safe_when_the_provider_returns_undecodable_bytes(photos):
     checks_by_id = {c["id"]: c for c in receipt.checks}
     assert checks_by_id["structural.illustration_watermark_burned"]["passed"] is False
     assert checks_by_id["structural.illustration_still_watermark_burned"]["passed"] is True
+
+
+def _sealed_offline_case(photos) -> tuple[InMemoryStorage, object]:
+    """A normally sealed offline case, carrying the full burn-in record."""
+    storage = InMemoryStorage(bucket="wm-legacy")
+    pipeline = CasePipeline(FakeVisionExtractor(), FakeMediaProvider(), storage,
+                            renderer=PillowSchematicRenderer(animate=False))
+    return storage, pipeline.run(CaseSpec(case_id="wm-legacy", photos=photos))
+
+
+def test_pre_burn_in_manifest_verifies_without_a_red_receipt(photos):
+    """A case sealed before the burn-in existed must not fail verification.
+
+    Real cases sealed before the disclosure burn-in landed carry no
+    ``watermark_text`` and none of the ``*_watermark_burned`` fields. These
+    checks used to fail hard on such a manifest, so pressing Verify on an older
+    case produced a red receipt for something that case never claimed. Absence
+    of the WHOLE record is now tolerated, matching how the camera-move and
+    authorship checks already behaved.
+    """
+    storage, result = _sealed_offline_case(photos)
+
+    def fetch(name: str) -> bytes | None:
+        ref = result.artifacts.get(name)
+        return storage.get(ref.key) if ref is not None else None
+
+    legacy = json.loads(json.dumps(result.manifest))
+    for field in ("watermark_text", "watermark_burned", "watermark_error",
+                  "still_watermark_burned", "still_watermark_error"):
+        legacy["illustration"].pop(field, None)
+
+    by_id = {c["id"]: c for c in verify_all(legacy, fetch).checks}
+    for check_id in ("structural.illustration_watermark_burned",
+                     "structural.illustration_still_watermark_burned"):
+        assert by_id[check_id]["passed"] is True, by_id[check_id]
+        assert "nothing to re-verify" in by_id[check_id]["evidence"]
+
+
+def test_partial_burn_in_record_is_still_verified_strictly(photos):
+    """Tolerating a fully absent record must not let a partial one through.
+
+    Dropping only the inconvenient half (keeping the burned flags, losing the
+    disclosure text) is not a pre-feature manifest, it is an incomplete claim,
+    so it must still fail.
+    """
+    storage, result = _sealed_offline_case(photos)
+
+    def fetch(name: str) -> bytes | None:
+        ref = result.artifacts.get(name)
+        return storage.get(ref.key) if ref is not None else None
+
+    partial = json.loads(json.dumps(result.manifest))
+    partial["illustration"].pop("watermark_text", None)
+
+    by_id = {c["id"]: c for c in verify_all(partial, fetch).checks}
+    assert by_id["structural.illustration_watermark_burned"]["passed"] is False
