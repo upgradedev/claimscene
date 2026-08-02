@@ -410,6 +410,18 @@ def verify_all(
                                     label_word: str = label_word) -> tuple[bool, str]:
             illustration = manifest.get("illustration") or {}
             text = illustration.get("watermark_text")
+            # Absence-tolerant ONLY when the whole burn-in record is missing,
+            # which means the case was sealed before the feature existed. A
+            # real case from 2026-07-30 does exactly this and used to make
+            # ``verify_all`` return a red receipt for something that was never
+            # claimed. Partial presence is still verified strictly below, so a
+            # manifest cannot drop just the inconvenient half and pass, and
+            # tampering with a manifest that DOES carry these fields still
+            # breaks ``seal`` regardless, since they sit inside the hashed body.
+            if (text is None
+                    and illustration.get("watermark_burned") is None
+                    and illustration.get("still_watermark_burned") is None):
+                return True, "no disclosure burn-in record sealed (nothing to re-verify)"
             if text != DISCLOSURE:
                 return False, (f"illustration.watermark_text missing or altered "
                                f"(expected {DISCLOSURE!r}, got {text!r})")
@@ -434,9 +446,9 @@ def verify_all(
             # Absence-tolerant by design: a manifest sealed before this
             # feature existed (or a hand-built manifest that never claims a
             # camera move at all) has nothing to re-verify here -- that is
-            # not the same as a dishonest omission, unlike the watermark
-            # fields above, which every manifest this project seals has
-            # always carried.
+            # not the same as a dishonest omission. The watermark checks
+            # above follow the same rule for the same reason: cases sealed
+            # before the burn-in landed genuinely predate those fields.
             return True, "no camera-move record sealed (nothing to re-verify)"
         if not isinstance(applied, bool):
             return False, "illustration.camera_move_applied is not an explicit boolean"

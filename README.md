@@ -361,7 +361,7 @@ manifest instead of pretending they do not exist.
 
 ## Demo video
 
-A narrated walkthrough lives at **`demo/claimscene-demo.mp4`** (about 2:25,
+A narrated walkthrough lives at **`demo/claimscene-demo.mp4`** (about 2:35,
 1920x1080 H.264, ElevenLabs voiceover with burned captions). It is assembled
 beat by beat from `demo/claimscene-demo.beats.json`: each beat's line is
 synthesized, the visual duration is locked to the measured audio, and a gentle
