@@ -6,10 +6,24 @@
 #     --substitutions=_IMAGE=europe-west1-docker.pkg.dev/PROJECT/REPO/claimscene:TAG
 substitutions:
   _IMAGE: "europe-west1-docker.pkg.dev/upgradegr-claimscene/claimscene/claimscene:latest"
+  # Stamped into the image so GET /health reports the commit actually running.
+  # deploy/deploy-cloudrun.sh fills these from git; empty is reported as null.
+  _BUILD_SHA: ""
+  _BUILD_TIME: ""
 
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "-t", "${_IMAGE}", "-f", "Dockerfile", "."]
+    args:
+      - "build"
+      - "-t"
+      - "${_IMAGE}"
+      - "--build-arg"
+      - "CLAIMSCENE_BUILD_SHA=${_BUILD_SHA}"
+      - "--build-arg"
+      - "CLAIMSCENE_BUILD_TIME=${_BUILD_TIME}"
+      - "-f"
+      - "Dockerfile"
+      - "."
 
 images:
   - "${_IMAGE}"

@@ -188,6 +188,20 @@ The container boots in **offline** mode (health → `mode=offline`) with zero
 credentials. See [`deploy/CLOUDRUN.md`](deploy/CLOUDRUN.md) for the turnkey
 Cloud Run deploy (`bash deploy/deploy-cloudrun.sh`) and the live cutover.
 
+**Check that the live app really is this commit.** The image is stamped at
+build time, so you can confirm a deployment matches what you are reading here,
+without any access to the project:
+
+```bash
+curl -s https://claimscene-147595510158.europe-west1.run.app/health | jq .build
+# {"commit": "<full sha>", "built_at": "<utc timestamp>"}
+```
+
+Compare `commit` against this repository's history. It is `null` for a build
+that did not go through the deploy pipeline (a local run, or CI), which is the
+honest answer rather than a guess, and the deploy script appends `-dirty` if
+the working tree did not match the commit it reports.
+
 ## Quickstart (offline, no credentials, ~2 minutes)
 
 ```bash
