@@ -1,4 +1,4 @@
-import { Download, FileText, Film, Plus, Ruler, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Download, FileText, Film, Plus, Ruler, ShieldAlert } from "lucide-react";
 import { API_BASE, type RenderResponse } from "@/lib/api";
 import { useCaseStore } from "@/store/useCaseStore";
 import { illustrationIsPlayable } from "@/lib/utils";
@@ -33,6 +33,22 @@ export function ResultStep({ result }: { result: RenderResponse }) {
         <Button variant="secondary" onClick={reset}>
           <Plus className="h-4 w-4" /> New case
         </Button>
+      </div>
+
+      {/* What "sealed" does and doesn't mean -- reuses the DisclosureBanner's
+          amber/#1c1608 styling so it reads as the same honesty line, right
+          where "Case sealed" could otherwise be misread as "case verified". */}
+      <div className="flex items-start gap-2.5 rounded border border-amber-400/30 bg-[#1c1608] px-4 py-2.5">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden />
+        <p className="font-mono text-xs leading-relaxed tracking-wide text-amber-200">
+          <span className="font-semibold">
+            Sealed means the files are unchanged, not that the account is verified.
+          </span>{" "}
+          <span className="text-amber-200/70">
+            This case documents what was reported and reviewed. It is not an official police
+            report and does not establish fault.
+          </span>
+        </p>
       </div>
 
       {/* Media: factual schematic + disclosed illustration, side by side.

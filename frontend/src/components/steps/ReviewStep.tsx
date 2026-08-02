@@ -1,4 +1,4 @@
-import { ArrowLeft, Crosshair, Lock, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Crosshair, Lock, Plus, Trash2 } from "lucide-react";
 import {
   APPROACHES,
   DAMAGE_SEVERITIES,
@@ -96,6 +96,21 @@ export function ReviewStep() {
         <span className="ml-auto">
           <Badge variant="amber">source: {sourceLabel(extraction)}</Badge>
         </span>
+      </div>
+
+      {/* What confirming here does and doesn't prove -- reuses the
+          DisclosureBanner's amber/#1c1608 styling so it reads as the same
+          honesty line, not a separate warning. */}
+      <div className="mb-6 flex items-start gap-2.5 rounded border border-amber-400/30 bg-[#1c1608] px-4 py-2.5">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden />
+        <p className="font-mono text-xs leading-relaxed tracking-wide text-amber-200">
+          <span className="font-semibold">Confirming a field is not the same as verifying it.</span>{" "}
+          <span className="text-amber-200/70">
+            This case records what you confirm here, or what the AI proposed and you leave
+            unchanged, not a verified account of the accident. It is not an official police
+            report and does not establish fault.
+          </span>
+        </p>
       </div>
 
       {/* grid-cols-1 at the base pins the single mobile column to minmax(0,1fr)

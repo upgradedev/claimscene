@@ -5,7 +5,7 @@ import { Hero } from "./Hero";
 describe("Hero", () => {
   it("renders the two-layer thesis and trust pillars", () => {
     render(<Hero onStart={() => {}} />);
-    expect(screen.getByRole("heading", { name: /One sealed truth/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /One verifiable seal/i })).toBeInTheDocument();
     expect(screen.getByText(/You stay in control/i)).toBeInTheDocument();
     expect(screen.getByText(/No hallucinated coordinates/i)).toBeInTheDocument();
     // Both preview cards carry the NOT EVIDENCE disclosure.
