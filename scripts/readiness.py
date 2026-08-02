@@ -703,6 +703,68 @@ def check_honest_illustration_watermark_burned() -> tuple[bool, str]:
                   "for both burners; pipeline seals watermark_text + both burned flags")
 
 
+def check_honest_camera_move_sealed() -> tuple[bool, str]:
+    """The illustration camera move is computed by us, from the case's own
+    factual Timeline -- never requested from or produced by the generative
+    model (see ``camera.py``). A live render on 2026-07-31 proved the model
+    cannot be steered on camera motion even with an explicit request plus a
+    naming ``negative_prompt``: the clip still drifted to an extreme
+    close-up.
+
+    Drives the REAL computation (not a mock): a real Timeline with impact
+    participants yields a deterministic, in-bounds CameraPath; a Timeline
+    with no contact point (no impacts) honestly yields no path at all; the
+    fail-safe path is exercised with genuinely undecodable input and must
+    return the ORIGINAL bytes unchanged with an honest ``applied=False``
+    (never raise, never silently claim success -- and never depend on
+    whether ffmpeg happens to be on this runner's PATH, matching every
+    other check here); and a full offline pipeline run structurally seals
+    well-typed camera-move fields into the manifest. (The real-success push
+    against a real clip needs ffmpeg and is proven in the pytest
+    integration suite instead.)"""
+    from claimscene.adapters.fakes import _scene_left_cross
+    from claimscene.camera import apply_camera_push, compute_camera_path
+    from claimscene.layout import LayoutEngine
+    from claimscene.scene import Road, SceneGraph, Vehicle
+
+    scene = _scene_left_cross()
+    timeline = LayoutEngine().build(scene)
+    path = compute_camera_path(timeline)
+    if path is None:
+        return False, "a real impact scene yielded no CameraPath at all"
+    if not (0.0 < path.end_zoom <= 1.0):
+        return False, f"end_zoom out of range: {path.end_zoom}"
+    if compute_camera_path(LayoutEngine().build(_scene_left_cross())) != path:
+        return False, "the same scene did not yield a deterministic CameraPath"
+
+    no_impact = SceneGraph(
+        road=Road(layout="parking_lot", lanes_per_direction=1, signal="none"),
+        vehicles=[Vehicle(id="veh_a", kind="car", color="blue")])
+    no_impact_timeline = LayoutEngine().build(no_impact)
+    if compute_camera_path(no_impact_timeline) is not None:
+        return False, "a scene with no impacts yielded a CameraPath anyway"
+
+    garbage = b"not a real media file"
+    result = apply_camera_push(garbage, timeline, duration_s=5.0)
+    if result.applied:
+        return False, "camera push claimed success on undecodable input"
+    if result.data != garbage:
+        return False, "camera push altered the bytes despite failing"
+    if not result.error:
+        return False, "camera push failed silently (no error recorded)"
+
+    _storage, standard_result = _standard_run()
+    ill = standard_result.manifest["illustration"]
+    if not isinstance(ill.get("camera_move_applied"), bool):
+        return False, "illustration.camera_move_applied not sealed as an explicit boolean"
+    if not ill.get("camera_move_source") or not ill.get("camera_move_note"):
+        return False, "illustration.camera_move_source/note missing or empty"
+    return True, ("real CameraPath computed + deterministic + in-bounds for an impact "
+                  "scene; no-impact scene honestly yields none; fail-safe on undecodable "
+                  "input returns original bytes + honest applied=False; pipeline seals "
+                  "camera_move_applied/source/note")
+
+
 def check_honest_source_attribution_sealed() -> tuple[bool, str]:
     from claimscene.provenance import verify_manifest
 
@@ -982,6 +1044,10 @@ def build_criteria() -> list[Criterion]:
                   "Illustration disclosure burned into pixels, not just requested "
                   "in the prompt; fail-safe never ships a false positive",
                   3, run=check_honest_illustration_watermark_burned),
+            Check("honest_media.camera_move_sealed",
+                  "Camera move computed from the factual Timeline, deterministic "
+                  "and in-bounds; fail-safe never ships a false positive",
+                  2, run=check_honest_camera_move_sealed),
             Check("honest_media.source_attribution_sealed",
                   "Per-input source/attribution sealed; re-badging detected",
                   2, run=check_honest_source_attribution_sealed),

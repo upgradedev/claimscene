@@ -263,3 +263,76 @@ def test_clip_seed_is_deterministic_and_derived_from_the_factual_raster(photos):
     expected = int(hashlib.sha256(raster_a).hexdigest()[:8], 16) % (2**31 - 1)
     assert seed_a == expected
     assert 0 <= seed_a < 2**31 - 1
+
+
+# ── resolution/aspect-ratio params + the locked-off camera ask ──────────────
+def test_clip_step_sends_the_target_quality_duration_and_aspect_ratio(photos):
+    """The provider call carries the module constants exactly -- pins that
+    the raised resolution and the seed-matching aspect ratio are actually on
+    the wire, not just defined and unused (see pipeline.py's
+    ILLUSTRATION_CLIP_* constants and their docstring for how "720p"/"4:3"
+    were determined)."""
+    from claimscene.pipeline import (
+        ILLUSTRATION_CLIP_ASPECT_RATIO,
+        ILLUSTRATION_CLIP_DURATION_S,
+        ILLUSTRATION_CLIP_QUALITY,
+    )
+
+    provider = _RecordingMediaProvider()
+    pipeline = CasePipeline(FakeVisionExtractor(), provider, InMemoryStorage(),
+                            renderer=PillowSchematicRenderer(animate=False))
+    _run(pipeline, photos, case_id="resolution-check")
+
+    video_calls = [c for c in provider.calls if c["modality"] == "video"]
+    assert len(video_calls) == 1
+    params = video_calls[0]["params"]
+    assert params["quality"] == ILLUSTRATION_CLIP_QUALITY == "720p"
+    assert params["aspect_ratio"] == ILLUSTRATION_CLIP_ASPECT_RATIO == "4:3"
+    assert params["duration"] == ILLUSTRATION_CLIP_DURATION_S == 5
+
+
+def test_illustration_prompt_asks_for_a_locked_off_camera(pipeline, photos):
+    """The model is asked to hold a single locked-off frame -- the old
+    "gentle camera parallax and a slow push" wording (which drifted into an
+    unusable extreme close-up on a live 2026-07-31 render) is gone; the
+    deterministic push that replaced it is computed and applied afterward
+    by claimscene.camera, never requested from the model."""
+    result = _run(pipeline, photos)
+    prompt = result.manifest["illustration"]["prompt"]
+    assert "locked-off" in prompt
+    assert "no camera movement" in prompt.lower()
+    assert "gentle camera parallax" not in prompt.lower()
+    assert "only the camera moves" not in prompt.lower()
+
+
+def test_negative_prompt_suppresses_camera_movement_in_both_directions(photos):
+    """Broadened from the 2026-07-30 fix (which only named the pull-OUT
+    failure mode): a follow-up render on 2026-07-31 drifted the other way,
+    pulling IN to a close-up. The negative prompt now names camera motion
+    generically, not just one direction of it."""
+    provider = _RecordingMediaProvider()
+    pipeline = CasePipeline(FakeVisionExtractor(), provider, InMemoryStorage(),
+                            renderer=PillowSchematicRenderer(animate=False))
+    _run(pipeline, photos, case_id="negative-prompt-both-directions")
+
+    video_calls = [c for c in provider.calls if c["modality"] == "video"]
+    negative = video_calls[0]["params"]["negative_prompt"]
+    assert negative == ILLUSTRATION_NEGATIVE_PROMPT
+    for unwanted in ("camera movement", "camera motion", "zoom in", "dolly", "parallax"):
+        assert unwanted in negative
+
+
+def test_manifest_seals_camera_move_provenance(pipeline, photos):
+    """A reader of the sealed manifest can tell the camera path is
+    deterministic and computed (and from what) -- the same way
+    ``still_source`` records the seed's provenance. The offline/fake clip is
+    never real decodable video, so ``camera_move_applied`` is honestly
+    False here (mirrors ``watermark_burned`` under the same fake provider);
+    the real-success path is covered in
+    tests/integration/test_illustration_camera_move.py."""
+    result = _run(pipeline, photos)
+    ill = result.manifest["illustration"]
+    assert ill["camera_move_source"] == "timeline:contact_point"
+    assert isinstance(ill["camera_move_note"], str) and "deterministic" in ill["camera_move_note"]
+    assert ill["camera_move_applied"] is False
+    assert ill["camera_move_error"]

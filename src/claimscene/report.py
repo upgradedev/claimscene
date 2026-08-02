@@ -455,27 +455,41 @@ def illustration_prompt(scene: SceneGraph, timeline: Timeline) -> str:
     The clip is no longer seeded by a generated establish-shot still: its
     seed image is the case's own deterministic schematic raster (see
     ``pipeline.py`` step 5 / ``schematic.SchematicArtifacts.seed_png``), so
-    this prompt asks the model to gently animate THAT top-down diagram --
-    camera parallax and a slow push, vehicles held perfectly static --
-    instead of describing a scene the model would have to invent from
-    scratch. A live render on 2026-07-30 (case
-    ``live-forensic-retry-0bb32eeb``) rendered a stated rear-end collision as
-    a head-on collision even with an explicit geometry sentence already in
-    the prompt: prompt-level control alone was not enough to pin geometry a
-    diffusion model is free to reinterpret. Seeding from the schematic makes
-    the layout INHERITED rather than requested, so it cannot drift; this
-    prompt still restates the same geometry sentence too, so the seed image
-    and the text agree (see ``_impact_relationship_phrase``). This used to
-    end with an ``Overlay text: '{DISCLOSURE}'`` request; that line is gone
-    -- the disclosure is guaranteed instead by
+    this prompt asks the model to hold THAT top-down diagram completely
+    still -- no camera motion of any kind -- instead of describing a scene
+    the model would have to invent from scratch. A live render on
+    2026-07-30 (case ``live-forensic-retry-0bb32eeb``) rendered a stated
+    rear-end collision as a head-on collision even with an explicit
+    geometry sentence already in the prompt: prompt-level control alone was
+    not enough to pin geometry a diffusion model is free to reinterpret.
+    Seeding from the schematic makes the layout INHERITED rather than
+    requested, so it cannot drift; this prompt still restates the same
+    geometry sentence too, so the seed image and the text agree (see
+    ``_impact_relationship_phrase``).
+
+    This prompt used to ask for "gentle camera parallax and a slow push";
+    a live render on 2026-07-31 read that (plus a ``negative_prompt``
+    naming "zoom out") as licence to pull the camera OUT into an extreme
+    close-up instead -- the clip ran from an unusably wide shot to
+    vehicles-as-specks. ``pixverse-v6-i2v`` exposes no motion or
+    camera-control parameter at all (verified against the SDK's own
+    ``param_allowlist``), so no amount of prompt tuning can pin a camera
+    move this precisely. The model is now asked for NO camera movement at
+    all; the push that used to be requested here is instead computed
+    deterministically from this same Timeline and applied after generation
+    (see ``claimscene.camera``) -- the model supplies the look, we supply
+    the motion. This used to end with an ``Overlay text: '{DISCLOSURE}'``
+    request; that line is gone -- the disclosure is guaranteed instead by
     ``watermark.burn_clip_watermark``, deterministically, after generation.
     """
     return (
-        "Gentle camera parallax and a slow push over this top-down forensic "
-        "reconstruction diagram. "
+        "Completely still, locked-off camera over this top-down forensic "
+        "reconstruction diagram. No camera movement of any kind: no pan, "
+        "no tilt, no zoom, no dolly, no parallax. "
         + _forensic_diagram_description(scene, timeline)
         + " The vehicles stay perfectly static in the exact positions "
-        "already shown in the diagram; only the camera moves."
+        "already shown in the diagram, and the camera stays perfectly "
+        "still too -- a single locked-off frame for the whole clip."
     )
 
 
@@ -503,20 +517,49 @@ ILLUSTRATION_SEED_NOTE = (
 #: Measured, not guessed: a live render on 2026-07-30 obeyed the seed's
 #: geometry but read "gentle camera parallax and a slow push" as licence for a
 #: dramatic fly-through, pulling so far out that the vehicles became specks on
-#: an empty road for roughly half the clip. The positive prompt already asks
-#: for restraint and that was not enough. ``pixverse-v6-i2v`` exposes no
-#: motion or camera-control parameter (verified against the SDK's own
-#: ``param_allowlist``), so naming the unwanted behaviour here is the strongest
-#: lever available: diffusion models suppress what a negative prompt names far
-#: more reliably than they honour a positive instruction not to do it.
+#: an empty road for roughly half the clip. The positive prompt already asked
+#: for restraint and that was not enough -- a follow-up render on 2026-07-31
+#: (with an earlier revision of this list already naming "zoom out") still
+#: drifted, this time pulling IN to an extreme close-up instead.
+#: ``pixverse-v6-i2v`` exposes no motion or camera-control parameter at all
+#: (verified against the SDK's own ``param_allowlist``), so a model that
+#: cannot be told "restrained movement" is instead told "no movement", in
+#: both directions, by every name it might use for it: diffusion models
+#: suppress what a negative prompt names far more reliably than they honour a
+#: positive instruction not to do it. Any camera motion the model still
+#: produces despite this is exactly what the fixed, letterboxed framing of
+#: ``claimscene.camera``'s deterministic push is built to tolerate (see its
+#: padding), not rely on this list alone to prevent.
 #:
 #: The trailing entries repeat the positive prompt's no-text rule. The clip
 #: must carry exactly one caption, the disclosure burned in deterministically
 #: afterwards by ``watermark.py``, never text the model invented.
 ILLUSTRATION_NEGATIVE_PROMPT = (
-    "zoom, zoom out, pull back, dolly out, wide shot, extreme wide shot, "
-    "aerial view, distant view, scale change, cars becoming small, "
-    "empty road, fast camera movement, shaky camera, cuts, scene change, "
+    "camera movement, camera motion, panning, tilting, zoom, zoom in, "
+    "zoom out, pull back, dolly, dolly in, dolly out, truck, pedestal, "
+    "orbit, parallax, tracking shot, handheld camera, shaky camera, "
+    "wide shot, extreme wide shot, aerial view, distant view, scale "
+    "change, cars becoming small, empty road, cuts, scene change, "
     "moving vehicles, vehicles changing position, text, labels, captions, "
     "subtitles, watermark, logo"
+)
+
+#: What the sealed manifest records in ``illustration.camera_move_note`` --
+#: mirrors ``ILLUSTRATION_SEED_NOTE``'s role for the seed image: a reader of
+#: the sealed manifest should be able to tell that only the visual STYLE
+#: came from the model, never the camera motion. Plain and truthful rather
+#: than a per-scene template: the computation itself is what varies per
+#: case (see ``claimscene.camera.compute_camera_path``), not this note.
+CAMERA_PUSH_NOTE = (
+    "The camera move in this clip, when applied, was not requested from or "
+    "produced by the generative model -- the model is explicitly asked "
+    "for a locked-off, static shot with no camera movement at all (see "
+    "the negative prompt). It is a deterministic push computed from the "
+    "case's own factual Timeline: a slow zoom toward the reconstructed "
+    "point of impact, framed so every impact participant's full footprint "
+    "stays inside the frame for the whole clip. Computed and applied "
+    "after generation, over the model's raw output, before the disclosure "
+    "caption is burned in; see claimscene.camera for the exact "
+    "computation and claimscene.camera.apply_camera_push for the "
+    "fail-safe behaviour when it cannot be applied."
 )

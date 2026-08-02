@@ -208,12 +208,28 @@ def impact_frame_index(timeline: Timeline) -> int:
 
 
 # ── SVG static diagram ───────────────────────────────────────────────────────
+def world_to_pixel(x: float, y: float, *, width: int = 960, height: int = 720,
+                   scale: float = 8.0) -> tuple[float, float]:
+    """World-frame meters (x east, y north, origin at the conflict center) ->
+    pixel coordinates in the raster a ``width``x``height``x``scale`` render
+    produces. The exact mapping ``_View.px`` uses internally (below) for
+    every drawn primitive -- extracted as a public, pure function so a
+    caller outside this module can target a world-frame point (e.g. the
+    Timeline's own ``contact_point``) in the seed image's own pixel space
+    without re-deriving or duplicating the projection. See
+    ``claimscene.camera``, which reuses this exact mapping to compute the
+    deterministic camera push from the factual layer -- never from the
+    generative model.
+    """
+    return (width / 2.0 + x * scale, height / 2.0 - y * scale)
+
+
 class _View:
     def __init__(self, width: int, height: int, scale: float) -> None:
         self.w, self.h, self.scale = width, height, scale
 
     def px(self, x: float, y: float) -> tuple[float, float]:
-        return (self.w / 2.0 + x * self.scale, self.h / 2.0 - y * self.scale)
+        return world_to_pixel(x, y, width=self.w, height=self.h, scale=self.scale)
 
     def fmt(self, x: float, y: float) -> str:
         sx, sy = self.px(x, y)
