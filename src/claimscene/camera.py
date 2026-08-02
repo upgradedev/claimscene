@@ -314,13 +314,52 @@ def ffprobe_available() -> bool:
     return shutil.which("ffprobe") is not None
 
 
+def _is_usable_rate(rate: str) -> bool:
+    """True iff ``rate`` parses as a positive ffprobe "N/D" (or plain "N")
+    frame-rate string.
+
+    Rejects ffprobe's own "unknown" sentinel (``"0/0"``, returned for some
+    containers/streams where duration metadata is absent), ``"N/A"``,
+    missing/empty, and any non-numeric or non-positive form -- all of which
+    would tell ffmpeg's ``fps=`` something nonsensical rather than a real
+    frame rate.
+    """
+    if not rate:
+        return False
+    text = rate.strip()
+    if text.upper() == "N/A":
+        return False
+    num_str, sep, den_str = text.partition("/")
+    try:
+        num = float(num_str)
+        den = float(den_str) if sep else 1.0
+    except ValueError:
+        return False
+    return num > 0.0 and den > 0.0
+
+
 def _probe_video_params(data: bytes, *, timeout: float = 30.0
                         ) -> tuple[int, int, str] | None:
-    """Return ``(width, height, r_frame_rate)`` for ``data``, or ``None`` on
-    any failure -- never raises. ``r_frame_rate`` is ffprobe's own "N/D"
+    """Return ``(width, height, frame_rate)`` for ``data``, or ``None`` on
+    any failure -- never raises. ``frame_rate`` is ffprobe's own "N/D"
     string, passed straight through to ffmpeg's ``fps=`` (which accepts that
     form directly), so no floating-point frame-rate rounding is introduced
     by this module.
+
+    Prefers ``avg_frame_rate`` (total frames divided by duration -- "what
+    frame rate does this clip actually play at") over ``r_frame_rate``
+    (ffprobe's own BASE rate: the lowest rate every frame timestamp can be
+    expressed at exactly). The two agree for constant-frame-rate content,
+    which is the only kind this module's own tests encode -- but a live
+    provider's clip is not guaranteed to be CFR: for variable-frame-rate or
+    odd-timestamp content, ``r_frame_rate`` can read back as something
+    unrelated to the real playback rate (e.g. a large stream timebase like
+    ``90000/1``), which would tell ``zoompan``'s ``fps=`` to emit tens of
+    thousands of frames per second -- a slow, wrong-duration encode that the
+    fail-safe would still catch (as a timeout or an ffmpeg error) but only
+    silently, with nothing in the recorded ``error`` pointing at why.
+    ``r_frame_rate`` is still probed and used as the fallback for the rarer
+    case where ``avg_frame_rate`` itself is ffprobe's "unknown" sentinel.
 
     The output size/frame-rate must be probed rather than assumed: the
     delivered clip's actual pixel dimensions are a live-provider fact this
@@ -344,7 +383,7 @@ def _probe_video_params(data: bytes, *, timeout: float = 30.0
             in_path = Path(tmp) / "in.mp4"
             in_path.write_bytes(data)
             cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                   "-show_entries", "stream=width,height,r_frame_rate",
+                   "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate",
                    "-of", "json", str(in_path)]
             proc = subprocess.run(cmd, check=True, capture_output=True,
                                   timeout=timeout, text=True)
@@ -353,12 +392,16 @@ def _probe_video_params(data: bytes, *, timeout: float = 30.0
     try:
         stream = json.loads(proc.stdout)["streams"][0]
         width, height = int(stream["width"]), int(stream["height"])
-        r_frame_rate = str(stream["r_frame_rate"])
+        avg_frame_rate = str(stream.get("avg_frame_rate", ""))
+        r_frame_rate = str(stream.get("r_frame_rate", ""))
     except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
         return None
-    if width <= 0 or height <= 0 or not r_frame_rate:
+    if width <= 0 or height <= 0:
         return None
-    return width, height, r_frame_rate
+    frame_rate = avg_frame_rate if _is_usable_rate(avg_frame_rate) else r_frame_rate
+    if not _is_usable_rate(frame_rate):
+        return None
+    return width, height, frame_rate
 
 
 # ── the fail-safe orchestrator ───────────────────────────────────────────────
@@ -392,13 +435,14 @@ def apply_camera_push(
     """Apply the deterministic push computed from ``timeline`` to the clip
     ``data``.
 
-    Fail-safe: no contact point to target, ffmpeg/ffprobe absent, an
-    unprobeable/undecodable clip, a subprocess error/timeout, or no output
-    produced all return the ORIGINAL ``data`` unchanged with
-    ``applied=False`` and an ``error`` -- never raises, never ships a false
-    positive. Callers (``pipeline.py``) always still run the disclosure
-    watermark burn on whatever bytes come back, so a failed push here never
-    means an unwatermarked clip and never fails the render outright.
+    Fail-safe: no contact point to target, a computed push that would be a
+    visual no-op, ffmpeg/ffprobe absent, an unprobeable/undecodable clip, a
+    subprocess error/timeout, or no output produced all return the ORIGINAL
+    ``data`` unchanged with ``applied=False`` and an ``error`` -- never
+    raises, never ships a false positive. Callers (``pipeline.py``) always
+    still run the disclosure watermark burn on whatever bytes come back, so
+    a failed push here never means an unwatermarked clip and never fails the
+    render outright.
     """
     path = compute_camera_path(timeline, width=seed_width, height=seed_height,
                                scale=seed_scale, padding_frac=padding_frac,
@@ -407,6 +451,21 @@ def apply_camera_push(
         return CameraMoveResult(data=data, applied=False,
                                 error="no contact point in timeline "
                                 "(no impact participants to target)")
+    if path.end_zoom >= 1.0:
+        # Containment needed the WHOLE frame just to hold both impact
+        # participants plus padding (only reachable for a pathologically
+        # large or spread-out footprint -- see PADDING_FRAC) -- the computed
+        # push has nothing left to visually push toward: the zoompan filter
+        # would be a constant z=1 for the whole clip. Sealing applied=True
+        # here would be a truthful-sounding but empty claim (the manifest's
+        # CAMERA_PUSH_NOTE describes "a slow zoom" that would not actually
+        # be visible), and re-encoding through ffmpeg for zero visual change
+        # would cost real time for nothing. Treated the same as "nothing to
+        # target": honest, fail-safe, no subprocess call.
+        return CameraMoveResult(data=data, applied=False,
+                                error="computed push is a no-op (containment "
+                                "needed the full frame; nothing to zoom "
+                                "toward)")
     if not ffmpeg_available():
         return CameraMoveResult(data=data, applied=False, error="ffmpeg not on PATH")
     probe = _probe_video_params(data, timeout=timeout)

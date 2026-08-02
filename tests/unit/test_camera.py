@@ -9,6 +9,8 @@ ffprobe) actually being on PATH. Media stays tiny (96x64, 2 frames).
 from __future__ import annotations
 
 import io
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -339,9 +341,83 @@ def test_probe_video_params_returns_none_on_non_positive_dimensions(monkeypatch)
     assert camera._probe_video_params(b"irrelevant, never really decoded") is None
 
 
+@pytest.mark.parametrize("rate,expected", [
+    ("2/1", True),
+    ("30000/1001", True),
+    ("24", True),  # a plain number, no "/", is also valid ffprobe output
+    ("0/0", False),  # ffprobe's own "unknown" sentinel
+    ("N/A", False),
+    ("n/a", False),
+    ("", False),
+    ("not-a-rate", False),
+    ("5/0", False),  # zero denominator
+    ("0/5", False),  # zero numerator: not a usable rate either
+    ("-5/1", False),
+])
+def test_is_usable_rate(rate, expected):
+    assert camera._is_usable_rate(rate) is expected
+
+
+def test_probe_video_params_prefers_avg_frame_rate_over_a_wild_r_frame_rate(monkeypatch):
+    """``r_frame_rate`` is ffprobe's BASE rate (the lowest rate every
+    timestamp divides into exactly), not necessarily the real playback
+    rate -- for variable-frame-rate or odd-timestamp content it can read
+    back as something unrelated to the clip's actual frame rate (e.g. a raw
+    stream timebase). ``avg_frame_rate`` (total frames / duration) is the
+    field that answers "what frame rate does this clip actually play at",
+    and must be preferred whenever it is itself usable -- proven here with a
+    ``r_frame_rate`` an order of magnitude away from anything sane, to make
+    unambiguous which field won."""
+    monkeypatch.setattr(camera, "ffprobe_available", lambda: True)
+    monkeypatch.setattr(
+        camera.subprocess, "run",
+        lambda *a, **k: _FakeCompletedProcess(
+            '{"streams": [{"width": 96, "height": 64, '
+            '"r_frame_rate": "90000/1", "avg_frame_rate": "24/1"}]}'))
+    assert camera._probe_video_params(b"irrelevant, never really decoded") == (96, 64, "24/1")
+
+
+def test_probe_video_params_falls_back_to_r_frame_rate_when_avg_is_unknown(monkeypatch):
+    """ffprobe's own "unknown" sentinel for ``avg_frame_rate`` is ``"0/0"``
+    (seen when duration metadata is absent) -- must fall back to
+    ``r_frame_rate`` rather than propagating the unusable value."""
+    monkeypatch.setattr(camera, "ffprobe_available", lambda: True)
+    monkeypatch.setattr(
+        camera.subprocess, "run",
+        lambda *a, **k: _FakeCompletedProcess(
+            '{"streams": [{"width": 96, "height": 64, '
+            '"r_frame_rate": "30/1", "avg_frame_rate": "0/0"}]}'))
+    assert camera._probe_video_params(b"irrelevant, never really decoded") == (96, 64, "30/1")
+
+
+def test_probe_video_params_returns_none_when_both_rates_are_unusable(monkeypatch):
+    monkeypatch.setattr(camera, "ffprobe_available", lambda: True)
+    monkeypatch.setattr(
+        camera.subprocess, "run",
+        lambda *a, **k: _FakeCompletedProcess(
+            '{"streams": [{"width": 96, "height": 64, '
+            '"r_frame_rate": "0/0", "avg_frame_rate": "N/A"}]}'))
+    assert camera._probe_video_params(b"irrelevant, never really decoded") is None
+
+
+def test_probe_video_params_tolerates_a_missing_avg_frame_rate_field(monkeypatch):
+    """Some ffprobe/container combinations may omit a field outright rather
+    than reporting ``"0/0"`` -- must degrade to the ``r_frame_rate``
+    fallback via ``dict.get``, not raise a ``KeyError``."""
+    monkeypatch.setattr(camera, "ffprobe_available", lambda: True)
+    monkeypatch.setattr(
+        camera.subprocess, "run",
+        lambda *a, **k: _FakeCompletedProcess(
+            '{"streams": [{"width": 96, "height": 64, "r_frame_rate": "15/1"}]}'))
+    assert camera._probe_video_params(b"irrelevant, never really decoded") == (96, 64, "15/1")
+
+
 @needs_ffmpeg
 @needs_ffprobe
 def test_probe_video_params_returns_real_dimensions_on_a_real_tiny_clip():
+    # Verified empirically that this fixture's real avg_frame_rate and
+    # r_frame_rate agree exactly ("2/1", constant-frame-rate content), so
+    # preferring avg_frame_rate does not change this expected value.
     assert camera._probe_video_params(_tiny_clip()) == (96, 64, "2/1")
 
 
@@ -352,6 +428,34 @@ def test_apply_camera_push_no_contact_point_is_fail_safe():
     assert result.applied is False
     assert result.data == original
     assert "no contact point" in result.error
+
+
+def test_apply_camera_push_is_a_fail_safe_no_op_when_containment_needs_the_full_frame(
+        monkeypatch):
+    """A pathologically large impact-participant footprint can push
+    ``compute_camera_path``'s ``end_zoom`` all the way to 1.0 (containment
+    needs the WHOLE frame) -- at that point the zoompan filter would be a
+    constant z=1 for the entire clip: nothing would actually move. Sealing
+    ``applied=True`` for that would be a truthful-sounding but empty claim
+    (CAMERA_PUSH_NOTE describes "a slow zoom" that would not be visible), so
+    this must fail safe exactly like "no contact point at all" -- and, since
+    there is nothing to encode, without ever shelling out to ffmpeg (proven
+    here by making any subprocess call blow up)."""
+    timeline = _tiny_timeline((0.0, 0.0), (0.0, 0.0), length_m=1000.0, width_m=1000.0)
+    path = camera.compute_camera_path(timeline)
+    assert path is not None
+    assert path.end_zoom == pytest.approx(1.0)  # sanity: this fixture saturates containment
+
+    def boom(*_a, **_k):
+        raise AssertionError("apply_camera_push must not shell out for a no-op push")
+
+    monkeypatch.setattr(camera, "ffmpeg_available", lambda: True)
+    monkeypatch.setattr(camera.subprocess, "run", boom)
+    original = b"whatever bytes, never inspected for a no-op push"
+    result = camera.apply_camera_push(original, timeline, duration_s=5.0)
+    assert result.applied is False
+    assert result.data == original
+    assert "no-op" in result.error
 
 
 def test_apply_camera_push_fail_safe_on_undecodable_input():
@@ -490,3 +594,82 @@ def test_apply_camera_push_preserves_duration_and_frame_count():
     before = _probe_frames_and_duration(original)
     after = _probe_frames_and_duration(result.data)
     assert after == before
+
+
+# ── apply_camera_push: the push is visually meaningful, not just re-encoded ─
+def _extract_frame_png(data: bytes, *, time_s: float) -> bytes:
+    """Decode a single frame at ``time_s`` to PNG via a real ffmpeg call --
+    test-only, never used by production code (``camera.py`` itself never
+    decodes to still images)."""
+    with tempfile.TemporaryDirectory(prefix="claimscene-camera-frame-") as tmp:
+        in_path = Path(tmp) / "in.mp4"
+        out_path = Path(tmp) / "frame.png"
+        in_path.write_bytes(data)
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(time_s),
+             "-i", str(in_path), "-frames:v", "1", str(out_path)],
+            check=True, capture_output=True, timeout=30)
+        return out_path.read_bytes()
+
+
+def _mean_abs_pixel_diff(png_a: bytes, png_b: bytes) -> float:
+    """Mean absolute per-channel pixel difference between two same-sized
+    PNGs. A re-encode alone (no framing change at all) still perturbs this
+    slightly (lossy H.264), which is exactly why the test below compares
+    this value against that same clip's OWN first-frame noise floor rather
+    than an arbitrary absolute constant."""
+    img_a = Image.open(io.BytesIO(png_a)).convert("RGB")
+    img_b = Image.open(io.BytesIO(png_b)).convert("RGB")
+    if img_b.size != img_a.size:
+        img_b = img_b.resize(img_a.size)
+    raw_a, raw_b = img_a.tobytes(), img_b.tobytes()
+    return sum(abs(x - y) for x, y in zip(raw_a, raw_b, strict=True)) / len(raw_a)
+
+
+@needs_ffmpeg
+@needs_ffprobe
+@pytest.mark.ffmpeg
+def test_apply_camera_push_visibly_moves_the_frame_by_the_end_of_the_clip():
+    """Not just "the bytes changed" (true of any re-encode, even one where
+    the zoompan filter ends up doing nothing visible) but "the framing
+    actually moved": ``test_apply_camera_push_succeeds_on_a_real_tiny_clip``
+    passes ``duration_s=5.0`` against a clip that only plays for 1 real
+    second, so its zoom ramp barely leaves ``u~0`` -- byte inequality there
+    is fully explained by ordinary re-encode noise and would pass even if
+    the filter graph were subtly broken. This test instead builds a clip
+    whose real duration MATCHES ``duration_s``, so the ramp reaches its full
+    ``end_zoom`` by the last frame, and requires the pushed clip's last
+    frame to differ from the original's own last frame by well more than
+    re-encoding alone explains -- measured against that same pair's OWN
+    first-frame difference (where the push has barely started) as a
+    self-calibrated noise floor, rather than an arbitrary constant that
+    would be fragile across ffmpeg versions or scene content. Calibrated
+    empirically against this exact fixture: noise floor ~1.6, moved diff
+    ~43 (roughly 27x), so the 3x-and-a-floor-of-5 threshold below has wide
+    margin either way.
+    """
+    timeline = LayoutEngine().build(_scene_rear_end())
+    fps = 4
+    duration_s = 5.0
+    n_frames = int(fps * duration_s)  # 20 frames @ 4fps = 5s -- still tiny
+    frames = [render_frame(timeline, i, width=96, height=64) for i in range(n_frames)]
+    original = encode_mp4(frames, fps=fps)
+    assert original is not None
+
+    result = camera.apply_camera_push(original, timeline, duration_s=duration_s)
+    assert result.applied is True
+
+    first_t = 0.0
+    last_t = duration_s - (1.0 / fps)  # the last real frame, not past EOF
+    noise_floor = _mean_abs_pixel_diff(
+        _extract_frame_png(result.data, time_s=first_t),
+        _extract_frame_png(original, time_s=first_t),
+    )
+    moved_diff = _mean_abs_pixel_diff(
+        _extract_frame_png(result.data, time_s=last_t),
+        _extract_frame_png(original, time_s=last_t),
+    )
+    assert moved_diff > max(noise_floor * 3.0, 5.0), (
+        f"pushed clip's last frame barely differs from the original's: "
+        f"moved_diff={moved_diff:.2f}, noise_floor={noise_floor:.2f} "
+        "(the zoompan filter may have run but produced no visible motion)")

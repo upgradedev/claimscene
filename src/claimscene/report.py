@@ -527,9 +527,16 @@ ILLUSTRATION_SEED_NOTE = (
 #: both directions, by every name it might use for it: diffusion models
 #: suppress what a negative prompt names far more reliably than they honour a
 #: positive instruction not to do it. Any camera motion the model still
-#: produces despite this is exactly what the fixed, letterboxed framing of
-#: ``claimscene.camera``'s deterministic push is built to tolerate (see its
-#: padding), not rely on this list alone to prevent.
+#: produces despite this is only partly mitigated by
+#: ``claimscene.camera``'s deterministic push: its containment math builds
+#: in padding around both impact participants' own footprint (see
+#: ``claimscene.camera.PADDING_FRAC``), which gives some tolerance for minor
+#: drift in exactly where the model draws them, but the push is a crop-and-
+#: scale computed in the SEED image's own coordinate space, not a
+#: letterboxing pass -- it still assumes the delivered clip frames the same
+#: scene, at the same aspect ratio, as the seed it was given, and cannot
+#: correct for a field of view the model changed on its own. This list is
+#: the first line of defense, not a substitute for verifying real output.
 #:
 #: The trailing entries repeat the positive prompt's no-text rule. The clip
 #: must carry exactly one caption, the disclosure burned in deterministically
