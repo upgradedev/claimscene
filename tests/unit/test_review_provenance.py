@@ -393,3 +393,79 @@ def test_illustration_watermark_burned_flag_missing_fails_the_check():
     assert _check(receipt, "structural.illustration_watermark_burned")["passed"] is False
     # The sibling (still) check is independent and unaffected.
     assert _check(receipt, "structural.illustration_still_watermark_burned")["passed"] is True
+
+
+# ── verify_all: illustration camera move (see camera.py) ────────────────────
+def test_camera_move_check_present_and_honest_when_degraded():
+    """The offline/fake illustration's clip is never real decodable video,
+    so ``camera_move_applied`` is honestly False here -- the check does not
+    require True (unlike the watermark check), only that the outcome is
+    honestly recorded, so this still passes with no special-casing for the
+    offline path."""
+    storage, result = _sealed(proposed=_scene())
+    assert result.manifest["illustration"]["camera_move_applied"] is False
+    assert result.manifest["illustration"]["camera_move_error"]
+    receipt = verify_all(result.manifest, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_camera_move")["passed"] is True
+
+
+def test_camera_move_check_is_absence_tolerant():
+    """A manifest sealed before this feature existed (no ``camera_move_*``
+    fields at all -- the same minimal shape ``build_manifest`` accepts
+    elsewhere in this file) has nothing to re-verify here: passes, not a
+    failure."""
+    manifest = build_manifest(
+        case_id="c", inputs=[{"source": "staged_demo"}],
+        scene_graph_sha256=sha256_bytes(b"s"), timeline_sha256=sha256_bytes(b"t"),
+        schematic={"static_svg_sha256": sha256_bytes(b"svg"),
+                   "hero_png_sha256": sha256_bytes(b"h"), "frame_count": 2, "fps": 8,
+                   "animation_sha256": None, "watermark": WATERMARK},
+        illustration={"provider": "fake-media", "model": "m", "prompt": "p",
+                      "sha256": sha256_bytes(b"c"), "degraded": True},
+        report_sha256=sha256_bytes(b"r"), created_at="2026-07-23T00:00:00+00:00")
+    receipt = verify_all(manifest, lambda name: {
+        "scene_graph": b"s", "timeline": b"t", "schematic_svg": b"svg",
+        "schematic_hero": b"h", "illustration": b"c", "report": b"r"}.get(name))
+    check = _check(receipt, "structural.illustration_camera_move")
+    assert check["passed"] is True
+    assert "no camera-move record" in check["evidence"].lower()
+
+
+def test_camera_move_check_never_requires_success_even_when_live():
+    """Unlike the watermark check, a live (non-degraded) render is allowed
+    to have honestly failed its camera push -- the fail-safe is intentional
+    design (see camera.py), not a gap this check needs to close."""
+    storage, result = _sealed(proposed=_scene())
+    live_but_honestly_failed = json.loads(json.dumps(result.manifest))
+    live_but_honestly_failed["illustration"]["degraded"] = False
+    live_but_honestly_failed["illustration"]["camera_move_applied"] = False
+    live_but_honestly_failed["illustration"]["camera_move_error"] = "ffmpeg not on PATH"
+    receipt = verify_all(live_but_honestly_failed, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_camera_move")["passed"] is True
+
+
+def test_camera_move_check_flips_when_applied_false_has_no_error():
+    storage, result = _sealed(proposed=_scene())
+    lied = json.loads(json.dumps(result.manifest))
+    lied["illustration"]["camera_move_applied"] = False
+    lied["illustration"]["camera_move_error"] = None
+    receipt = verify_all(lied, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_camera_move")["passed"] is False
+    assert receipt.success is False
+
+
+def test_camera_move_check_flips_when_applied_true_also_carries_an_error():
+    storage, result = _sealed(proposed=_scene())
+    contradictory = json.loads(json.dumps(result.manifest))
+    contradictory["illustration"]["camera_move_applied"] = True
+    contradictory["illustration"]["camera_move_error"] = "should not coexist with applied=True"
+    receipt = verify_all(contradictory, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_camera_move")["passed"] is False
+
+
+def test_camera_move_check_flips_when_applied_is_not_a_boolean():
+    storage, result = _sealed(proposed=_scene())
+    wrong_type = json.loads(json.dumps(result.manifest))
+    wrong_type["illustration"]["camera_move_applied"] = "yes"
+    receipt = verify_all(wrong_type, _fetcher(storage, result))
+    assert _check(receipt, "structural.illustration_camera_move")["passed"] is False

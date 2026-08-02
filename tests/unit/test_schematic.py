@@ -14,6 +14,7 @@ from claimscene.schematic import (
     build_static_svg,
     impact_frame_index,
     render_frame,
+    world_to_pixel,
 )
 
 GOLDEN = Path(__file__).resolve().parent.parent / "golden" / "schematic_static.svg"
@@ -23,6 +24,18 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 @pytest.fixture(scope="module")
 def timeline():
     return LayoutEngine().build(_scene_left_cross())
+
+
+# ── world_to_pixel: the projection claimscene.camera reuses ─────────────────
+def test_world_to_pixel_maps_the_origin_to_the_canvas_center():
+    assert world_to_pixel(0.0, 0.0) == (480.0, 360.0)  # default 960x720x8.0
+
+
+def test_world_to_pixel_matches_the_documented_formula():
+    # East (+x) moves right; north (+y) moves UP the canvas (pixel y
+    # decreases) -- the same world-frame convention layout.py documents.
+    assert world_to_pixel(10.0, -5.0) == (480.0 + 80.0, 360.0 + 40.0)
+    assert world_to_pixel(-3.0, 4.0, width=200, height=100, scale=2.0) == (94.0, 42.0)
 
 
 def test_static_svg_matches_golden(timeline):

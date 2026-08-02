@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
+from .camera import apply_camera_push
 from .case import CaseSpec, ReviewClassification
 from .evaluation import diff_scenes, review_counts
 from .keys import KeyStrategy, make_key
@@ -27,6 +28,7 @@ from .provenance import (
     verify_all,
 )
 from .report import (
+    CAMERA_PUSH_NOTE,
     ILLUSTRATION_NEGATIVE_PROMPT,
     ILLUSTRATION_SEED_NOTE,
     build_report,
@@ -35,6 +37,31 @@ from .report import (
 from .scene import SceneGraph, scene_to_json, semantic_warnings
 from .schematic import PillowSchematicRenderer
 from .watermark import burn_clip_watermark, burn_still_watermark
+
+# ── illustration clip generation params ──────────────────────────────────────
+# Determined offline (no live provider key available): the SDK's own
+# ModelSpec for ``pixverse-v6-i2v`` carries an EMPTY ``param_schemas`` -- it
+# performs no value validation for either ``quality`` or ``resolution``, so
+# the accepted set for either field genuinely cannot be confirmed against
+# the SDK alone. What IS confirmed: the Pixverse model family's own
+# docstring (``genblaze_gmicloud.models.video``) states ``quality`` is
+# "required by the upstream API" for this family (the field this pipeline
+# already sent successfully at "360p"), and
+# ``genblaze_core.providers.canonical_params.RESOLUTIONS_TIERED`` -- the
+# SDK's own portable resolution vocabulary -- lists "720p" alongside
+# 480p/1080p/1440p/4k as a standard tier (notably, "360p" is NOT in that
+# set, despite demonstrably working today). "720p" is the standard next
+# tier up and the sensible target the task asked for; it is not verified
+# against a live render. Kept as a module constant, trivial to change.
+ILLUSTRATION_CLIP_QUALITY = "720p"
+# The seed image (``schematic.SchematicArtifacts.seed_png``) is rendered at
+# ``PillowSchematicRenderer``'s own default 960x720 -- exactly 4:3. Stating
+# that ratio explicitly (rather than leaving it to the provider's own
+# default) is what lets ``claimscene.camera``'s deterministic push assume
+# the delivered clip shares the seed's field of view -- see camera.py's
+# module docstring for exactly what this does and does not guarantee.
+ILLUSTRATION_CLIP_ASPECT_RATIO = "4:3"
+ILLUSTRATION_CLIP_DURATION_S = 5
 
 
 @dataclass
@@ -185,6 +212,15 @@ class CasePipeline:
         #    (see GenblazeMediaProvider._external_inputs), which needs B2
         #    configured; in practice it always is, since B2 is ClaimScene's
         #    primary storage backend for every other artifact too.
+        #
+        #    The camera is no longer requested from the model at all (a live
+        #    render on 2026-07-31 asked for "gentle camera parallax and a
+        #    slow push" and still drifted into an unusable extreme
+        #    close-up): the prompt now asks for a locked-off, static shot,
+        #    and the push that used to be requested in words is instead
+        #    computed deterministically from THIS SAME ``timeline`` and
+        #    applied to the model's raw output below, before the disclosure
+        #    is burned in -- see ``claimscene.camera``.
         still_raw = art.seed_png
         prompt = illustration_prompt(scene, timeline)
         # ``seed``: derived from the seed raster's own bytes, so the same case
@@ -196,20 +232,38 @@ class CasePipeline:
         illustration_raw = self.provider.generate(
             model=spec.illustration_model, prompt=prompt, modality="video",
             inputs=[still_raw],
-            # ``negative_prompt`` names the failure mode measured on a live
-            # render (the camera pulling out until the vehicles were specks);
-            # this model exposes no motion or camera parameter, so naming the
-            # unwanted behaviour is the strongest lever available. See
-            # report.ILLUSTRATION_NEGATIVE_PROMPT.
-            params={"duration": 5, "quality": "360p",
+            # ``negative_prompt`` names every camera motion the model might
+            # still produce despite the positive prompt's locked-off ask
+            # (measured: it has drifted both ways -- pulling out into a wide
+            # shot on 2026-07-30, pulling in to a close-up on 2026-07-31);
+            # this model exposes no motion or camera parameter, so naming
+            # the unwanted behaviour is the strongest lever available. See
+            # report.ILLUSTRATION_NEGATIVE_PROMPT. ``aspect_ratio`` matches
+            # the seed raster's own 4:3 canvas, so the deterministic camera
+            # push below can assume the delivered clip shares the seed's
+            # field of view (see claimscene.camera's module docstring).
+            params={"duration": ILLUSTRATION_CLIP_DURATION_S,
+                    "quality": ILLUSTRATION_CLIP_QUALITY,
+                    "aspect_ratio": ILLUSTRATION_CLIP_ASPECT_RATIO,
                     "negative_prompt": ILLUSTRATION_NEGATIVE_PROMPT,
                     "seed": clip_seed},
         )
 
+        # The deterministic push runs on the RAW model output, before the
+        # disclosure caption is burned in, so the caption is drawn once, on
+        # the final framing, and the push can never crop or distort it.
+        # Fail-safe: on any failure this returns the ORIGINAL bytes
+        # unchanged with ``applied=False`` -- the watermark burn below still
+        # always runs on whatever comes back, so a failed push here can
+        # never mean an unwatermarked clip and never fails the render
+        # outright. See ``camera.apply_camera_push``.
+        camera_result = apply_camera_push(
+            illustration_raw, timeline, duration_s=ILLUSTRATION_CLIP_DURATION_S)
+
         still_burn = burn_still_watermark(still_raw)
         self._store(result, "illustration_still", "illustration",
                     "illustration.png", still_burn.data, "image/png")
-        illustration_burn = burn_clip_watermark(illustration_raw)
+        illustration_burn = burn_clip_watermark(camera_result.data)
         self._store(result, "illustration", "illustration", "illustration.mp4",
                     illustration_burn.data, "video/mp4")
 
@@ -298,6 +352,19 @@ class CasePipeline:
                 "watermark_error": illustration_burn.error,
                 "still_watermark_burned": still_burn.burned,
                 "still_watermark_error": still_burn.error,
+                # The camera's own provenance -- mirrors ``still_source`` /
+                # ``still_prompt`` above: ``camera_move_source`` names exactly
+                # which factual artifact the push was computed from,
+                # ``camera_move_note`` is the long-form honesty note (see
+                # ``report.CAMERA_PUSH_NOTE``), and ``camera_move_applied`` /
+                # ``camera_move_error`` are the same honest-degrade pair every
+                # other fail-safe step in this pipeline seals (never a silent
+                # omission) -- see ``camera.apply_camera_push`` and
+                # ``provenance.verify_all``'s matching check.
+                "camera_move_source": "timeline:contact_point",
+                "camera_move_note": CAMERA_PUSH_NOTE,
+                "camera_move_applied": camera_result.applied,
+                "camera_move_error": camera_result.error,
             },
             report_sha256=result.artifacts["report"].sha256,
             review=review,

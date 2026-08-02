@@ -259,19 +259,27 @@ def test_pixverse_v6_i2v_routes_image_to_native_slot():
     assert match.family.name == "gmi-video-pixverse"
 
     spec = reg.get("pixverse-v6-i2v")
-    for allowed in ("image", "quality", "duration"):
+    for allowed in ("image", "quality", "duration", "aspect_ratio"):
         assert allowed in spec.param_allowlist, f"pixverse spec dropped {allowed!r}"
 
     img = GbAsset(url="https://host.test/chain-inputs/still.png",
                   media_type="image/png", sha256="a" * 64, size_bytes=10)
+    # "720p" / "4:3" -- kept in sync with pipeline.py's own
+    # ILLUSTRATION_CLIP_QUALITY / ILLUSTRATION_CLIP_ASPECT_RATIO constants
+    # (see their docstring for how "720p" was determined) so nothing here
+    # still implies the old "360p" is what ClaimScene actually sends; the
+    # SDK plumbing this test pins is agnostic to the literal value either
+    # way.
     step = Step(provider="gmicloud", model="pixverse-v6-i2v", prompt="orbit",
                 modality=Modality.VIDEO,
-                params={"duration": 5, "quality": "360p"}, inputs=[img])
+                params={"duration": 5, "quality": "720p", "aspect_ratio": "4:3"},
+                inputs=[img])
     payload = reg.prepare_payload(step)
     # The image URL lands in the native ``image`` slot (not dropped, not misrouted).
     assert payload["image"] == "https://host.test/chain-inputs/still.png"
     assert payload["duration"] == 5
-    assert payload["quality"] == "360p"
+    assert payload["quality"] == "720p"
+    assert payload["aspect_ratio"] == "4:3"
     assert payload["prompt"] == "orbit"
 
 

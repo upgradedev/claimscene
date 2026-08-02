@@ -255,6 +255,14 @@ def verify_all(
         burned it in, or the check fails — closing the gap where a real
         render carried ``degraded: false`` but the prompt-only disclosure was
         silently ignored by the model;
+      * ``structural.illustration_camera_move`` -- when the manifest records a
+        camera-move outcome (``illustration.camera_move_applied``), it is an
+        explicit boolean and carries an error only when it is ``False`` --
+        unlike the watermark check above, ``True`` is never REQUIRED (the
+        camera push is an honest best-effort layered over the always-required
+        watermark, not a second hard requirement -- see ``camera.py``); a
+        manifest sealed before this feature existed, or with no camera-move
+        record at all, passes with nothing to re-verify;
       * ``review.decision_digest`` — the approval receipt recomputes from its
         sealed proposed/confirmed hashes and stays bound to the sealed scene.
 
@@ -385,6 +393,32 @@ def verify_all(
 
         record(check_id, f"Illustration {label_word} disclosure burned into "
                          "pixels (or honestly flagged)", _illustration_watermark)
+
+    def _camera_move() -> tuple[bool, str]:
+        illustration = manifest.get("illustration") or {}
+        applied = illustration.get("camera_move_applied")
+        if applied is None:
+            # Absence-tolerant by design: a manifest sealed before this
+            # feature existed (or a hand-built manifest that never claims a
+            # camera move at all) has nothing to re-verify here -- that is
+            # not the same as a dishonest omission, unlike the watermark
+            # fields above, which every manifest this project seals has
+            # always carried.
+            return True, "no camera-move record sealed (nothing to re-verify)"
+        if not isinstance(applied, bool):
+            return False, "illustration.camera_move_applied is not an explicit boolean"
+        error = illustration.get("camera_move_error")
+        if applied is False and not error:
+            return False, ("camera_move_applied is False but no "
+                           "camera_move_error was recorded")
+        if applied is True and error is not None:
+            return False, ("camera_move_applied is True but a "
+                           f"camera_move_error is also recorded ({error!r})")
+        return True, f"illustration.camera_move_applied={applied}, honestly recorded"
+
+    record("structural.illustration_camera_move",
+           "Camera-move outcome honestly recorded (success is never required)",
+           _camera_move)
 
     def _review() -> tuple[bool, str]:
         review = manifest.get("review")

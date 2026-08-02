@@ -7,6 +7,8 @@ from claimscene.adapters.fakes import (
 from claimscene.layout import LayoutEngine
 from claimscene.provenance import DISCLOSURE
 from claimscene.report import (
+    CAMERA_PUSH_NOTE,
+    ILLUSTRATION_NEGATIVE_PROMPT,
     _contact_phrase,
     _idiom_phrase,
     build_report,
@@ -63,6 +65,46 @@ def test_illustration_prompt_deterministic_and_self_disclosing():
     assert a == illustration_prompt(scene, timeline)
     assert "silver car" in a and "green van" in a
     assert "not a real recording" in a
+
+
+def test_illustration_prompt_asks_for_a_locked_off_camera():
+    """The clip prompt used to ask for "gentle camera parallax and a slow
+    push"; a live render on 2026-07-31 read that as licence for a dramatic
+    zoom into an extreme close-up. It now asks for a single locked-off
+    frame instead -- the push that used to be requested in words is
+    computed deterministically and applied after generation (see
+    claimscene.camera), never requested from the model."""
+    scene = _scene_rear_end()
+    timeline = LayoutEngine().build(scene)
+    prompt = illustration_prompt(scene, timeline)
+    assert "locked-off" in prompt
+    assert "no camera movement" in prompt.lower()
+    assert "gentle camera parallax" not in prompt.lower()
+    assert "only the camera moves" not in prompt.lower()
+    # The shared register/geometry/no-text guarantees
+    # (_forensic_diagram_description) are untouched by this change.
+    assert "Computer-generated" in prompt
+    assert "no text, no labels, no captions, and no watermarks" in prompt
+
+
+def test_illustration_negative_prompt_suppresses_all_camera_motion():
+    """Broadened from naming only the pull-OUT failure mode (2026-07-30) to
+    naming camera motion in general, in both directions -- a follow-up
+    render on 2026-07-31 drifted the other way, pulling IN to a close-up
+    instead."""
+    negative = ILLUSTRATION_NEGATIVE_PROMPT
+    for phrase in ("camera movement", "camera motion", "zoom in", "zoom out",
+                  "dolly", "parallax", "wide shot", "empty road"):
+        assert phrase in negative
+    # The no-text/watermark suppression the clip's single burned-in
+    # disclosure depends on (see watermark.py) is untouched.
+    assert "text" in negative and "watermark" in negative
+
+
+def test_camera_push_note_is_truthful_about_the_models_role():
+    note = CAMERA_PUSH_NOTE
+    assert "not" in note and "generative model" in note
+    assert "deterministic" in note
 
 
 def test_prompts_stay_in_the_moderation_safe_forensic_register():
