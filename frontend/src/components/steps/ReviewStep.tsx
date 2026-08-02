@@ -242,7 +242,7 @@ function VehicleEditor({
         <ClockPicker
           value={struck}
           allowNone
-          size={112}
+          size={176}
           ariaLabel={`Impact clock position for ${vehicle.id}`}
           onChange={(clock) => onChange(setImpact(scene, vehicle.id, clock))}
         />
@@ -262,14 +262,18 @@ function VehicleEditor({
         <div className="space-y-3">
           {vehicle.damage.map((dz, i) => (
             <div key={i} className="rounded border border-steel-700 bg-steel-950/40 p-3">
-              <div className="flex items-start justify-between gap-3">
+              {/* flex-col on mobile: the clock face grew to 176px (>=44px tap
+                  targets) and no longer shares a row with the fields at
+                  375px width — sm:flex-row restores the side-by-side layout
+                  once there's room. */}
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
                 <ClockPicker
                   value={dz.clock_position}
-                  size={96}
+                  size={176}
                   ariaLabel={`Damage ${i + 1} clock position for ${vehicle.id}`}
                   onChange={(clock) => onChange(patchDamage(scene, vehicle.id, i, { clock_position: clock ?? 12 }))}
                 />
-                <div className="flex-1 space-y-2">
+                <div className="w-full flex-1 space-y-2 sm:w-auto">
                   <Field label="severity">
                     <Select value={dz.severity} options={SEVERITY_OPTS}
                             onChange={(v) => onChange(patchDamage(scene, vehicle.id, i, { severity: v as typeof dz.severity }))} />

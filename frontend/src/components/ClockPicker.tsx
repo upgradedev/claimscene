@@ -17,13 +17,30 @@ const MEANING: Record<number, string> = {
 
 /** A 12-position clock face for locating damage / impact on a vehicle body.
  *  Constrained by construction — no free-text coordinates ever reach the
- *  scene. Optional "none" clears the value (used for the struck-toggle). */
+ *  scene. Optional "none" clears the value (used for the struck-toggle).
+ *
+ *  Each position's hit target is a 44x44 invisible box around a small
+ *  visible dot (WCAG 2.5.5) -- not a 44px dot, which would visibly overlap
+ *  its neighbours at 12-per-face. The invisible boxes still overlap each
+ *  other at this spacing (unavoidable with 12 of them this close), so
+ *  `size` has to stay large enough that no box crosses past its
+ *  NEIGHBOUR's dot centre -- otherwise a tap aimed at one dot can resolve
+ *  to the position next to it. Adjacent dot centres sit
+ *  `2*(0.42*size)*sin(15deg)` apart; the worst case is a 45-degree-diagonal
+ *  pair, where that distance splits `/sqrt(2)` between the x and y axes.
+ *  Clearing the 44px box's 22px half-extent on both axes needs size > ~143
+ *  (zero margin at exactly that). size=176 gives a real margin (~27px of
+ *  axis separation against the 22px threshold). This is verified
+ *  empirically, not just by the math above: every position's dot centre,
+ *  on every clock on the review step, was click-tested to resolve to that
+ *  exact position and not a neighbour. Re-verify the same way -- don't
+ *  just re-check the arithmetic -- before shrinking `size`. */
 export function ClockPicker({
   value,
   onChange,
   ariaLabel,
   allowNone = false,
-  size = 128,
+  size = 176,
 }: {
   value: number | null;
   onChange: (clock: number | null) => void;
@@ -58,14 +75,22 @@ export function ClockPicker({
               aria-label={`${clock} o'clock${MEANING[clock] ? ` (${MEANING[clock]})` : ""}`}
               onClick={() => onChange(selected && allowNone ? null : clock)}
               style={{ left: `${left}%`, top: `${top}%` }}
-              className={cn(
-                "absolute grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border font-mono text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
-                selected
-                  ? "border-amber-400 bg-amber-400 font-bold text-steel-950 shadow-glow-amber"
-                  : "border-steel-600 bg-steel-900 text-blueprint-dim hover:border-cyan-400/60 hover:text-cyan-200",
-              )}
+              // The 44x44 hit target. Transparent -- the visible dot is the
+              // inner span below, kept small so 12 of them read clearly on
+              // one face.
+              className="absolute grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
-              {clock}
+              <span
+                aria-hidden
+                className={cn(
+                  "grid h-6 w-6 place-items-center rounded-full border font-mono text-[10px] transition-colors",
+                  selected
+                    ? "border-amber-400 bg-amber-400 font-bold text-steel-950 shadow-glow-amber"
+                    : "border-steel-600 bg-steel-900 text-blueprint-dim hover:border-cyan-400/60 hover:text-cyan-200",
+                )}
+              >
+                {clock}
+              </span>
             </button>
           );
         })}
