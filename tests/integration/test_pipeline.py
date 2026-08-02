@@ -1,6 +1,7 @@
 """CasePipeline against the fakes: full artifact chain + sealed manifest."""
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -14,6 +15,7 @@ from claimscene.case import CaseSpec
 from claimscene.layout import LayoutEngine
 from claimscene.pipeline import CasePipeline
 from claimscene.provenance import WATERMARK, verify_artifact, verify_manifest
+from claimscene.report import ILLUSTRATION_NEGATIVE_PROMPT
 from claimscene.schematic import PillowSchematicRenderer
 from claimscene.watermark import burn_still_watermark
 
@@ -97,7 +99,8 @@ class _RecordingMediaProvider:
 
     def generate(self, *, model, prompt, modality="video", inputs=None, params=None):
         self.calls.append({"model": model, "prompt": prompt, "modality": modality,
-                           "inputs": list(inputs) if inputs else []})
+                           "inputs": list(inputs) if inputs else [],
+                           "params": dict(params or {})})
         return self._inner.generate(model=model, prompt=prompt, modality=modality,
                                     inputs=inputs, params=params)
 
@@ -208,3 +211,55 @@ def test_no_credential_material_in_manifest(pipeline, photos):
     for banned in ("b2_application_key", "b2_app_key", "gmi_api_key", "secret",
                    "password", "aws_secret"):
         assert banned not in blob
+
+
+def test_clip_step_sends_the_camera_suppression_negative_prompt(photos):
+    """The clip call must carry ``negative_prompt``.
+
+    A live render on 2026-07-30 obeyed the seeded geometry but pulled the
+    camera out until the vehicles were specks on an empty road for about half
+    the clip. ``pixverse-v6-i2v`` exposes no motion or camera parameter (its
+    SDK ``param_allowlist`` is image/seed/aspect_ratio/duration/video/
+    negative_prompt/video_url/resolution/quality/image_url/prompt/cfg_scale),
+    so naming the unwanted behaviour is the lever we actually have. This
+    pins that it is sent, and that it names the specific failure."""
+    provider = _RecordingMediaProvider()
+    pipeline = CasePipeline(FakeVisionExtractor(), provider, InMemoryStorage(),
+                            renderer=PillowSchematicRenderer(animate=False))
+    _run(pipeline, photos, case_id="negative-prompt-check")
+
+    video_calls = [c for c in provider.calls if c["modality"] == "video"]
+    assert len(video_calls) == 1
+    negative = video_calls[0]["params"]["negative_prompt"]
+    assert negative == ILLUSTRATION_NEGATIVE_PROMPT
+    # The measured failure mode, and the no-invented-text rule the burned-in
+    # disclosure depends on.
+    for unwanted in ("zoom out", "wide shot", "empty road", "text", "watermark"):
+        assert unwanted in negative
+
+
+def test_clip_seed_is_deterministic_and_derived_from_the_factual_raster(photos):
+    """The provider ``seed`` must be a pure function of the seed raster.
+
+    The raster is itself a pure function of the factual Timeline, so the same
+    sealed case asks the provider for the same clip every time: reproducible
+    from the record rather than from a stored random number."""
+    def run_once(case_id: str) -> tuple[int, bytes]:
+        provider = _RecordingMediaProvider()
+        pipeline = CasePipeline(FakeVisionExtractor(), provider, InMemoryStorage(),
+                                renderer=PillowSchematicRenderer(animate=False))
+        _run(pipeline, photos, case_id=case_id)
+        call = next(c for c in provider.calls if c["modality"] == "video")
+        return call["params"]["seed"], call["inputs"][0]
+
+    seed_a, raster_a = run_once("seed-determinism-a")
+    seed_b, raster_b = run_once("seed-determinism-b")
+
+    # Same scene, so the same factual raster and therefore the same seed --
+    # even though the case ids differ.
+    assert raster_a == raster_b
+    assert seed_a == seed_b
+    # Exactly the documented derivation, and inside the range these APIs take.
+    expected = int(hashlib.sha256(raster_a).hexdigest()[:8], 16) % (2**31 - 1)
+    assert seed_a == expected
+    assert 0 <= seed_a < 2**31 - 1
