@@ -101,8 +101,13 @@ test("review step: every 12-position clock radio is a >=44px tap target on mobil
       const radio = radios.nth(i);
       const box = await radio.boundingBox();
       expect(box, `clock #${g} position #${i} has a box`).not.toBeNull();
-      expect(box!.width, `clock #${g} position #${i} width >=44 (got ${box!.width})`).toBeGreaterThanOrEqual(44);
-      expect(box!.height, `clock #${g} position #${i} height >=44 (got ${box!.height})`).toBeGreaterThanOrEqual(44);
+      // 0.5px tolerance mirrors the 23.5-for-24 floor below: `h-11` (2.75rem)
+      // is exactly 44px, but a percentage-positioned, translate(-50%,-50%)
+      // element can report a bounding box a fraction of a px short (observed:
+      // 43.9998779296875) from sub-pixel rounding during compositing, not a
+      // real size difference.
+      expect(box!.width, `clock #${g} position #${i} width >=44 (got ${box!.width})`).toBeGreaterThanOrEqual(43.5);
+      expect(box!.height, `clock #${g} position #${i} height >=44 (got ${box!.height})`).toBeGreaterThanOrEqual(43.5);
       radiosChecked += 1;
     }
   }

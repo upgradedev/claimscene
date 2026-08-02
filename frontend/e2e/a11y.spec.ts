@@ -52,6 +52,12 @@ test("review step has no serious/critical a11y violations", async ({ page }) => 
   await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
   await page.getByRole("button", { name: /Extract scene/i }).click();
   await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i })).toBeVisible();
+  // toBeVisible() does not wait for the step's framer-motion fade-in to reach
+  // opacity:1 (same gotcha journey.spec.ts documents and guards against) --
+  // auditing mid-transition makes axe sample a genuinely-transitional,
+  // partially-transparent frame and report real-looking but non-representative
+  // color-contrast failures against content that is correct once settled.
+  await expect(page.getByRole("group", { name: /Step 2 of 4/ })).toHaveCSS("opacity", "1");
   expect(await auditSeriousOrCritical(page, "review")).toEqual([]);
 });
 
