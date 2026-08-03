@@ -232,8 +232,12 @@ curl -s https://upgradegr-claimscene.web.app/health | jq .service   # "claimscen
 ```
 
 It is published by [`.github/workflows/firebase-hosting.yml`](.github/workflows/firebase-hosting.yml)
-using the same keyless Workload Identity Federation as the Cloud Run deploy —
-no service-account key is stored in this repository for either.
+using the same keyless Workload Identity Federation as the Cloud Run deploy, so
+no service-account key is stored in this repository for either. That workflow's
+header lists the two one-time owner commands it needed (adding Firebase to the
+GCP project, and granting the deploy identity `roles/firebasehosting.admin`);
+creating the Hosting site is not one of them, because the deploy does that
+itself.
 
 ## Quickstart (offline, no credentials, ~2 minutes)
 

@@ -17,6 +17,22 @@ name: Deploy Firebase Hosting mirror
 # The identity gained exactly one role for this: roles/firebasehosting.admin.
 # Nothing was widened, and no key exists to leak.
 #
+# ONE-TIME, OWNER ONLY. Two things had to happen once, outside CI, before this
+# workflow could work, and they are written here rather than remembered:
+#
+#   # 1. upgradegr-claimscene was a bare GCP project. Firebase had never been
+#   #    added to it, which is why the first deploy died on the CLI's
+#   #    "resolving hosting target of a site with no site name" assertion.
+#   firebase projects:addfirebase upgradegr-claimscene
+#
+#   # 2. The existing Cloud Run deploy identity needed Hosting, and only that.
+#   gcloud projects add-iam-policy-binding upgradegr-claimscene \
+#     --member=serviceAccount:github-deployer@upgradegr-claimscene.iam.gserviceaccount.com \
+#     --role=roles/firebasehosting.admin
+#
+# Creating the Hosting SITE is NOT on that list: the deploy does it itself,
+# below, so it cannot go missing again.
+#
 # Ordering: this fires on CI's completion, the same trigger as the Cloud Run
 # deploy, so the two run side by side. That is safe because they publish
 # different things — this publishes static assets, that publishes the API — and
