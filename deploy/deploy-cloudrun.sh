@@ -55,14 +55,23 @@ echo "▶ project=${PROJECT_ID}  region=${REGION}  service=${SERVICE}  mode=${CL
 echo "▶ image=${IMAGE}"
 
 # ── 1. Target project + required APIs ────────────────────────────────────────
+# DEPLOY_SKIP_PROVISIONING=1 skips the one-time setup below. CI sets it so the
+# deploy identity can stay least-privilege: enabling services and creating
+# registries need project-admin rights that a deployer has no business holding
+# for a step that only ever has to run once. An owner runs this script without
+# the flag to provision; CI runs it with the flag to deploy.
+SKIP_PROVISIONING="${DEPLOY_SKIP_PROVISIONING:-0}"
+
 gcloud config set project "${PROJECT_ID}" >/dev/null
-gcloud services enable \
-  run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-  secretmanager.googleapis.com \
-  --project "${PROJECT_ID}"
+if [ "${SKIP_PROVISIONING}" != "1" ]; then
+  gcloud services enable \
+    run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
+    secretmanager.googleapis.com \
+    --project "${PROJECT_ID}"
+fi
 
 # ── 2. Artifact Registry repo (idempotent) ───────────────────────────────────
-if ! gcloud artifacts repositories describe "${AR_REPO}" \
+if [ "${SKIP_PROVISIONING}" != "1" ] && ! gcloud artifacts repositories describe "${AR_REPO}" \
       --location "${REGION}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
   echo "▶ creating Artifact Registry repo '${AR_REPO}' in ${REGION}"
   gcloud artifacts repositories create "${AR_REPO}" \
@@ -99,8 +108,13 @@ if [ "${CLAIMSCENE_MODE}" = "live" ]; then
     ENV_VARS="${ENV_VARS},NEBIUS_INFERENCE_BASE_URL=${NEBIUS_INFERENCE_BASE_URL}"
 
   # Cloud Run's runtime service account must be allowed to read each secret.
-  runtime_sa="${RUNTIME_SA:-$(gcloud projects describe "${PROJECT_ID}" \
-    --format='value(projectNumber)')-compute@developer.gserviceaccount.com}"
+  # Only needed for the IAM grant below, which CI skips, so do not spend an
+  # API call (or require the permission for it) on a deploy that will not use it.
+  runtime_sa=""
+  if [ "${SKIP_PROVISIONING}" != "1" ]; then
+    runtime_sa="${RUNTIME_SA:-$(gcloud projects describe "${PROJECT_ID}" \
+      --format='value(projectNumber)')-compute@developer.gserviceaccount.com}"
+  fi
 
   # env-var name → Secret Manager secret name (three required).
   secret_map=(
@@ -122,10 +136,16 @@ if [ "${CLAIMSCENE_MODE}" = "live" ]; then
       echo "  Stage it first:  B2_APPLICATION_KEY_ID=... B2_APPLICATION_KEY=... GMI_API_KEY=... bash deploy/stage-secrets.sh" >&2
       exit 1
     fi
-    gcloud secrets add-iam-policy-binding "${secret_name}" \
-      --member="serviceAccount:${runtime_sa}" \
-      --role="roles/secretmanager.secretAccessor" \
-      --project "${PROJECT_ID}" >/dev/null
+    # Granting the runtime account read access is one-time setup, so CI skips
+    # it and never needs admin on a secret. The existence check above still
+    # runs in CI (read-only), because "the secret is missing" is worth failing
+    # on and is exactly the kind of thing a deploy should not discover late.
+    if [ "${SKIP_PROVISIONING}" != "1" ]; then
+      gcloud secrets add-iam-policy-binding "${secret_name}" \
+        --member="serviceAccount:${runtime_sa}" \
+        --role="roles/secretmanager.secretAccessor" \
+        --project "${PROJECT_ID}" >/dev/null
+    fi
     set_secrets="${set_secrets:+${set_secrets},}${env_name}=${secret_name}:latest"
   done
   SET_SECRETS_ARGS=(--set-secrets "${set_secrets}")
