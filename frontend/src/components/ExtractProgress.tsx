@@ -56,8 +56,8 @@ export function ExtractProgress({ isSample }: { isSample: boolean }) {
 
       <p className="mt-2 text-[11px] text-blueprint-dim">
         {isSample
-          ? "Samples return the shipped ground-truth scene offline — this is usually instant. On a live deployment the VLM ladder runs on the photos instead."
-          : "Running the VLM extraction ladder on your photos — this can take up to ~a minute. You confirm every field on the next step."}
+          ? "Samples return the shipped ground-truth scene offline, so this is usually instant. On a live deployment the AI reads the photos instead."
+          : "Reading your photos with AI vision. This can take up to about a minute. You confirm every field on the next step."}
       </p>
     </div>
   );

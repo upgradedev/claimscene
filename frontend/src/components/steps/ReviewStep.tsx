@@ -54,7 +54,7 @@ function sourceLabel(extraction: ExtractResponse["extraction"] | null): string {
     case "committed_ground_truth":
       return "sample ground-truth (offline)";
     case "vlm_extraction":
-      return "VLM-extracted";
+      return "AI-read from your photos";
     case "fake_extraction":
       return "offline extractor";
     default:

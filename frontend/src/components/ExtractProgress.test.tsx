@@ -24,9 +24,12 @@ describe("ExtractProgress", () => {
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
   });
 
-  it("uses upload copy (VLM ladder) when not a sample", () => {
+  it("uses upload copy (plain-English AI vision) when not a sample", () => {
     render(<ExtractProgress isSample={false} />);
-    expect(screen.getByRole("status")).toHaveTextContent(/VLM extraction ladder/i);
+    // Plain English on purpose: the people reading this just had a crash, so
+    // the copy says what happens, not which model class does it.
+    expect(screen.getByRole("status")).toHaveTextContent(/Reading your photos with AI vision/i);
+    expect(screen.getByRole("status")).not.toHaveTextContent(/VLM/i);
     expect(screen.getByText(/Extracting the scene/i)).toBeInTheDocument();
   });
 
