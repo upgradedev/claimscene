@@ -83,4 +83,31 @@ describe("ReviewStep (human-in-the-loop centrepiece)", () => {
     );
     expect(screen.getByRole("button", { name: /^veh_a:.*east approach/i })).toBeInTheDocument();
   });
+
+  it("quotes the measured wait, and only claims a range when there is one", async () => {
+    // Measured live on the deployed app the day this shipped: one sample, so
+    // the median and the slow end are the same number. "about 2 minutes, and
+    // up to about 2 minutes" is not a range.
+    vi.spyOn(claimsceneApi, "renderEstimate")
+      .mockResolvedValue({ samples: 1, typical_seconds: 92, slow_seconds: 92 });
+    render(<ReviewStep />);
+    await screen.findByText(/Rendering takes about 2 minutes here\./i);
+    expect(screen.getByText(/last 1 case rendered here/i)).toBeInTheDocument();
+    expect(screen.queryByText(/at the slow end/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the slow end once the recent cases actually differ", async () => {
+    vi.spyOn(claimsceneApi, "renderEstimate")
+      .mockResolvedValue({ samples: 8, typical_seconds: 240, slow_seconds: 420 });
+    render(<ReviewStep />);
+    await screen.findByText(/up to about 7 minutes at the slow end/i);
+    expect(screen.getByText(/last 8 cases/i)).toBeInTheDocument();
+  });
+
+  it("says nothing has been timed rather than quoting a made-up figure", async () => {
+    vi.spyOn(claimsceneApi, "renderEstimate")
+      .mockResolvedValue({ samples: 0, typical_seconds: null, slow_seconds: null });
+    render(<ReviewStep />);
+    await screen.findByText(/No case has been timed here yet/i);
+  });
 });
