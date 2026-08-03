@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ExtractResponse, RenderResponse, Scenario } from "@/lib/api";
+import { caseHash, replaceHash, START_HASH } from "@/lib/route";
 import { cloneScene, type Scene } from "@/lib/scene";
 
 // The case workflow: pick a source (upload photos OR a sample scenario) →
@@ -132,9 +133,20 @@ export const useCaseStore = create<CaseState>((set, get) => ({
     }),
 
   setScene: (scene) => set({ scene }),
-  setResult: (result) => set({ result, step: "result" }),
+
+  // The moment a case exists as a durable, fetchable artifact, the URL says
+  // its name. Done here rather than in the component that happened to receive
+  // it, so the studio's own render and a case reopened from a link both end up
+  // with a URL someone can bookmark, refresh or send to an adjuster.
+  setResult: (result) => {
+    replaceHash(caseHash(result.case_id));
+    set({ result, step: "result" });
+  },
 
   reset: () => {
+    // Starting over drops the old case from the URL too — otherwise a refresh
+    // would reopen the case the visitor just walked away from.
+    replaceHash(START_HASH);
     get().photos.forEach((p) => URL.revokeObjectURL(p.url));
     set({
       step: "source", caseId: "case", photos: [], scenario: null, contextNote: "",

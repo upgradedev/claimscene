@@ -155,7 +155,11 @@ field → `422`), and the schematic's dynamic text is XML-escaped at the source.
 | `POST /cases/extract` | photos or a scenario → a constrained SceneGraph |
 | `POST /cases/preview-schematic` | a SceneGraph → a fast static schematic (live review) |
 | `POST /cases/render` | a reviewed SceneGraph → a sealed case |
+| `POST /cases/render/jobs` | the same, as a background job → `202` + a job id |
+| `GET /cases/render/jobs/{job_id}` | poll a submitted render (`queued`/`running`/`done`/`failed`) |
+| `GET /cases/render/estimate` | how long a render actually takes here, measured over recent ones |
 | `GET /cases/{id}` | the sealed manifest (raw canonical bytes, for in-browser verify) |
+| `GET /cases/{id}/result` | a sealed case rebuilt into the render body (reopen a case by link) |
 | `GET /cases/{id}/verify` | server-side re-verification from stored bytes (named-check receipt) |
 | `GET /cases/{id}/receipt` | the detached, self-sealed receipt (raw canonical bytes) |
 | `GET /cases/{id}/schematic` | factual-layer playback (MP4 live / PNG offline) |
@@ -165,6 +169,19 @@ Every route works offline with zero credentials. A live media-provider failure
 degrades **that request** to the offline provider against the same storage —
 the response says so (`provider_degraded`) and the sealed manifest records the
 provider that actually ran; it never 500s because a remote backend misbehaved.
+It also says **what kind** of failure it was, as one token from a closed set
+(`degrade_kind`: `credit` / `auth` / `rate_limit` / `timeout` / `unavailable` /
+`unknown` — see `src/claimscene/degrade.py`), sealed into the manifest's
+`illustration` block and turned into a plain sentence for the visitor. The
+upstream status line and error body never leave the server; they go to the log
+next to the same kind, so an operator can find the real reason from the message
+someone was shown.
+
+A case is addressable, so losing the tab does not lose the case: the web client
+puts the id in the URL (`#job/<id>` while it renders, `#case/<id>` once sealed)
+and reopens either from the routes above. An id another caller cannot see 404s
+identically to one that never existed — a shared link cannot confirm that
+someone else's case exists.
 
 ### Run the web app locally
 
@@ -424,7 +441,7 @@ desynced or over-length video fails the build.
   a Python job (ruff, pytest, pip-audit, **readiness gate GATING at `--min
   95`** with a *Web Application* criterion driving the API via TestClient),
   a **frontend job** (typecheck → Vitest → production build), and a
-  **real-browser end-to-end job** (20 Playwright/Chromium tests) that drives
+  **real-browser end-to-end job** (38 Playwright/Chromium tests) that drives
   the built client through the whole source → review → render → sealed-case
   journey and gates accessibility (zero serious/critical axe violations),
   responsive layout at 375/768/1280, and **plain language** — the consumer path

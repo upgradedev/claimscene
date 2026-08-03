@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Crosshair, Lock, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, Crosshair, Lock, Plus, Trash2 } from "lucide-react";
 import {
   APPROACHES,
   DAMAGE_SEVERITIES,
@@ -26,6 +26,8 @@ import {
   type Vehicle,
 } from "@/lib/scene";
 import type { ExtractResponse } from "@/lib/api";
+import { useRenderEstimate } from "@/lib/queries";
+import { approxDuration } from "@/lib/utils";
 import { useCaseStore } from "@/store/useCaseStore";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -60,6 +62,38 @@ function sourceLabel(extraction: ExtractResponse["extraction"] | null): string {
     default:
       return extraction?.extractor ?? "proposed";
   }
+}
+
+/** How long the next step will take, before anyone commits to waiting for it.
+ *
+ *  The number is measured, not written down by us: every completed render
+ *  records its own duration and the server hands back the median and the slow
+ *  end of the recent ones. With nothing measured yet it says that instead of
+ *  quoting a figure nobody has seen, and if the estimate cannot be fetched at
+ *  all the line simply does not appear. */
+function RenderTimeNote() {
+  const { data } = useRenderEstimate();
+  const typical = approxDuration(data?.typical_seconds ?? null);
+  const slow = approxDuration(data?.slow_seconds ?? null);
+  if (!data) return null;
+  return (
+    <p className="flex items-start gap-2 rounded border border-steel-700 bg-steel-950/60 px-3 py-2 text-xs leading-relaxed text-blueprint-dim">
+      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-400" aria-hidden />
+      {data.samples > 0 && typical ? (
+        <span>
+          Rendering takes {typical} here, {slow ? `and up to ${slow} ` : ""}at the slow end.
+          That comes from the last {data.samples} {data.samples === 1 ? "case" : "cases"}{" "}
+          rendered here. You can leave the page while it runs and come back to it.
+        </span>
+      ) : (
+        <span>
+          No case has been timed here yet, so we cannot say how long yours will take. A
+          live picture takes minutes, not seconds. You can leave the page while it runs
+          and come back to it.
+        </span>
+      )}
+    </p>
+  );
 }
 
 export function ReviewStep() {
@@ -162,6 +196,7 @@ export function ReviewStep() {
             <SchematicPreview scene={scene} proposedScene={proposedScene} />
           </div>
           <div className="mt-4 flex flex-col gap-2">
+            <RenderTimeNote />
             <Button
               size="lg"
               disabled={!sceneIsRenderable(scene)}

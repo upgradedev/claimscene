@@ -168,4 +168,58 @@ describe("RenderStep", () => {
     fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
     await waitFor(() => expect(spy.mock.calls.length).toBeGreaterThan(before));
   });
+
+  it("names the submitted job in the URL, so a lost tab can come back to it", async () => {
+    window.history.replaceState(null, "", "/");
+    vi.spyOn(claimsceneApi, "submitRenderJob")
+      .mockResolvedValue({ job_id: "job-abc", status: "queued" });
+    vi.spyOn(claimsceneApi, "getRenderJob")
+      .mockResolvedValue({ job_id: "job-abc", status: "running" });
+
+    renderStep();
+    await waitFor(() => expect(window.location.hash).toBe("#job/job-abc"));
+    expect(screen.getByText(/come back/i)).toBeInTheDocument();
+  });
+
+  it("shows the measured wait, not a number someone made up", async () => {
+    vi.spyOn(claimsceneApi, "submitRenderJob")
+      .mockResolvedValue({ job_id: "job-1", status: "queued" });
+    vi.spyOn(claimsceneApi, "getRenderJob")
+      .mockResolvedValue({ job_id: "job-1", status: "running" });
+    vi.spyOn(claimsceneApi, "renderEstimate")
+      .mockResolvedValue({ samples: 6, typical_seconds: 243, slow_seconds: 400 });
+
+    renderStep();
+    await screen.findByText(/Cases here usually take about 4 minutes/i);
+    expect(screen.getByText(/Waiting \d+ s/i)).toBeInTheDocument();
+  });
+
+  it("says it has no measurement rather than inventing one", async () => {
+    vi.spyOn(claimsceneApi, "submitRenderJob")
+      .mockResolvedValue({ job_id: "job-1", status: "queued" });
+    vi.spyOn(claimsceneApi, "getRenderJob")
+      .mockResolvedValue({ job_id: "job-1", status: "running" });
+    vi.spyOn(claimsceneApi, "renderEstimate")
+      .mockResolvedValue({ samples: 0, typical_seconds: null, slow_seconds: null });
+
+    renderStep();
+    await screen.findByText(/No case has been timed here yet/i);
+  });
+
+  it("admits when a render is slower than the recent ones", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(claimsceneApi, "submitRenderJob")
+      .mockResolvedValue({ job_id: "job-1", status: "queued" });
+    vi.spyOn(claimsceneApi, "getRenderJob")
+      .mockResolvedValue({ job_id: "job-1", status: "running" });
+    vi.spyOn(claimsceneApi, "renderEstimate")
+      .mockResolvedValue({ samples: 5, typical_seconds: 100, slow_seconds: 1 });
+
+    renderStep();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/slower than the recent ones/i)).toBeInTheDocument());
+  });
 });

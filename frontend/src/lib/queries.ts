@@ -8,6 +8,8 @@ import {
   type Health,
   type LibraryCase,
   type Manifest,
+  type RenderEstimate,
+  type RenderJobStatus,
   type RenderJobSubmitResponse,
   type RenderRequest,
   type RenderResponse,
@@ -18,6 +20,8 @@ export const queryKeys = {
   health: ["health"] as const,
   scenarios: ["scenarios"] as const,
   manifest: (id: string) => ["manifest", id] as const,
+  caseResult: (id: string) => ["caseResult", id] as const,
+  renderEstimate: ["renderEstimate"] as const,
   myLibrary: ["myLibrary"] as const,
 };
 
@@ -44,6 +48,38 @@ export function useManifest(caseId: string | null): UseQueryResult<Manifest> {
     queryFn: () => claimsceneApi.manifest(caseId as string),
     enabled: !!caseId,
     staleTime: Infinity,
+  });
+}
+
+/** A sealed case fetched by id (GET /cases/{id}/result) — the resume path,
+ *  when someone reopens a link instead of finishing the wizard in one sitting.
+ *
+ *  `retry: false` on purpose. The failure this query actually sees is a 404:
+ *  an unknown id, an expired one, or a case belonging to another account. None
+ *  of those improve by asking again, and a claimant staring at a spinner is
+ *  worse than being told plainly that the link did not work. A sealed case is
+ *  immutable, so `staleTime: Infinity` matches the manifest query. */
+export function useCaseResult(caseId: string | null): UseQueryResult<RenderResponse> {
+  return useQuery({
+    queryKey: queryKeys.caseResult(caseId ?? ""),
+    queryFn: () => claimsceneApi.caseResult(caseId as string),
+    enabled: !!caseId,
+    retry: false,
+    staleTime: Infinity,
+  });
+}
+
+/** Measured render durations (GET /cases/render/estimate), so the app can say
+ *  how long this takes without anybody guessing. Refetched rarely: it moves
+ *  only when a render completes, and a stale-by-a-minute median is fine.
+ *  `retry: false` keeps a missing estimate cheap — the UI simply says nothing
+ *  has been timed here yet. */
+export function useRenderEstimate(): UseQueryResult<RenderEstimate> {
+  return useQuery({
+    queryKey: queryKeys.renderEstimate,
+    queryFn: () => claimsceneApi.renderEstimate(),
+    retry: false,
+    staleTime: 60_000,
   });
 }
 
@@ -118,9 +154,27 @@ export const RENDER_JOB_MAX_POLL_MS = 12 * 60_000;
  *  multi-minute render. Resets on every successful tick. */
 export const RENDER_JOB_MAX_CONSECUTIVE_ERRORS = 3;
 
+export interface RenderJobPollOptions {
+  /** Treat a 404 as final instead of a blip worth retrying.
+   *
+   *  The two callers want opposite things from the same failure. Mid-wizard,
+   *  the job was just accepted, so a 404 is almost certainly a hiccup and
+   *  abandoning a live render over it would be awful. Resuming from a link,
+   *  a 404 is the normal answer for a link that is wrong, expired, or from
+   *  another account, and making someone watch a spinner for four more polls
+   *  before saying so is just a slower way to say the same thing. */
+  unknownIsFinal?: boolean;
+}
+
 export interface RenderJobPollState {
   /** The sealed case once the job status is "done". */
   result: RenderResponse | null;
+  /** The most recent status read back, whatever it said. Exposed so a caller
+   *  resuming from a link can see `updated_at` and notice a job that stopped
+   *  advancing (the in-process worker can be lost with the instance that ran
+   *  it — see claimscene/jobs.py), rather than polling a dead job for the
+   *  full ceiling. */
+  status: RenderJobStatus | null;
   /** Set once the job status is "failed", the max poll duration elapses, or
    *  the consecutive-error budget is exhausted. Always an Error (usually the
    *  same ApiError getRenderJob already throws) so the caller's existing
@@ -131,7 +185,9 @@ export interface RenderJobPollState {
   isPolling: boolean;
 }
 
-const IDLE_POLL_STATE: RenderJobPollState = { result: null, error: null, isPolling: false };
+const IDLE_POLL_STATE: RenderJobPollState = {
+  result: null, status: null, error: null, isPolling: false,
+};
 
 /**
  * Poll `GET /cases/render/jobs/{jobId}` on an interval until the job reaches
@@ -147,7 +203,10 @@ const IDLE_POLL_STATE: RenderJobPollState = { result: null, error: null, isPolli
  * (no interval wait) — offline/demo generation can finish near-instantly, so
  * a job may already be "done" the first time it's polled.
  */
-export function usePollRenderJob(jobId: string | null): RenderJobPollState {
+export function usePollRenderJob(
+  jobId: string | null,
+  { unknownIsFinal = false }: RenderJobPollOptions = {},
+): RenderJobPollState {
   const qc = useQueryClient();
   const [state, setState] = useState<RenderJobPollState>(IDLE_POLL_STATE);
 
@@ -163,11 +222,12 @@ export function usePollRenderJob(jobId: string | null): RenderJobPollState {
     let timer: number | undefined;
     let consecutiveErrors = 0;
     const startedAt = Date.now();
-    setState({ result: null, error: null, isPolling: true });
+    let lastStatus: RenderJobStatus | null = null;
+    setState({ result: null, status: null, error: null, isPolling: true });
 
     const giveUp = (error: Error) => {
       if (cancelled) return;
-      setState({ result: null, error, isPolling: false });
+      setState({ result: null, status: lastStatus, error, isPolling: false });
     };
 
     // Schedules the next tick, unless the wall-clock ceiling has already
@@ -187,19 +247,25 @@ export function usePollRenderJob(jobId: string | null): RenderJobPollState {
         const status = await claimsceneApi.getRenderJob(jobId as string);
         if (cancelled) return;
         consecutiveErrors = 0;
+        lastStatus = status;
         if (status.status === "done") {
           const result = status.result ?? null;
           if (result) qc.invalidateQueries({ queryKey: queryKeys.manifest(result.case_id) });
-          setState({ result, error: null, isPolling: false });
+          setState({ result, status, error: null, isPolling: false });
           return;
         }
         if (status.status === "failed") {
           giveUp(new ApiError(status.error ?? "Render failed."));
           return;
         }
+        setState({ result: null, status, error: null, isPolling: true });
         scheduleNext();
       } catch (err) {
         if (cancelled) return;
+        if (unknownIsFinal && err instanceof ApiError && err.status === 404) {
+          giveUp(err);
+          return;
+        }
         consecutiveErrors += 1;
         if (consecutiveErrors > RENDER_JOB_MAX_CONSECUTIVE_ERRORS) {
           giveUp(err instanceof Error ? err : new Error(String(err)));
@@ -215,7 +281,7 @@ export function usePollRenderJob(jobId: string | null): RenderJobPollState {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [jobId, qc]);
+  }, [jobId, qc, unknownIsFinal]);
 
   return state;
 }

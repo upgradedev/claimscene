@@ -111,3 +111,60 @@ def test_hostile_job_id_key_stays_sanitised_and_namespaced():
         assert segments[0] == "jobs"
         assert ".." not in segments
         assert not any(seg.startswith(".") for seg in segments)
+
+
+# ── measured render durations ────────────────────────────────────────────────
+def test_no_recorded_durations_reads_as_empty_not_an_error():
+    """A fresh deployment has measured nothing, and says so."""
+    assert jobs.read_durations(InMemoryStorage()) == []
+
+
+def test_corrupt_durations_object_reads_as_empty():
+    storage = InMemoryStorage()
+    storage.put(jobs.DURATIONS_KEY, b"not json")
+    assert jobs.read_durations(storage) == []
+    storage.put(jobs.DURATIONS_KEY, b'{"not": "a list"}')
+    assert jobs.read_durations(storage) == []
+    storage.put(jobs.DURATIONS_KEY, b'[1, 2, {"no_seconds": true}]')
+    assert jobs.read_durations(storage) == []
+
+
+def test_record_duration_appends_and_keeps_the_window_bounded():
+    storage = InMemoryStorage()
+    for i in range(jobs.MAX_DURATION_SAMPLES + 5):
+        jobs.record_duration(storage, float(i), degraded=False)
+    samples = jobs.read_durations(storage)
+    assert len(samples) == jobs.MAX_DURATION_SAMPLES
+    # The window keeps the most RECENT renders, so a provider change shows up.
+    assert samples[-1]["seconds"] == float(jobs.MAX_DURATION_SAMPLES + 4)
+    assert samples[0]["degraded"] is False and samples[0]["at"]
+
+
+def test_record_duration_never_raises_when_storage_is_broken():
+    """Bookkeeping must never turn a sealed case into an error."""
+
+    class _BrokenStorage(InMemoryStorage):
+        def put(self, key, data, content_type="application/octet-stream"):
+            raise RuntimeError("storage is down")
+
+    jobs.record_duration(_BrokenStorage(), 12.0, degraded=False)  # no raise
+
+
+def test_estimate_with_no_samples_admits_it_knows_nothing():
+    assert jobs.estimate([]) == {"samples": 0, "typical_seconds": None,
+                                 "slow_seconds": None}
+
+
+def test_estimate_reports_median_and_p90_of_real_durations():
+    samples = [{"seconds": s} for s in (100, 120, 140, 160, 900)]
+    est = jobs.estimate(samples)
+    assert est["samples"] == 5
+    assert est["typical_seconds"] == 140          # median, unmoved by the outlier
+    assert est["slow_seconds"] == 900             # nearest-rank p90
+    # Nearest rank never invents a duration between two real ones.
+    assert est["slow_seconds"] in {s["seconds"] for s in samples}
+
+
+def test_estimate_ignores_unparseable_rows():
+    est = jobs.estimate([{"seconds": "quick"}, {"seconds": 60}])
+    assert est["samples"] == 1 and est["typical_seconds"] == 60

@@ -92,8 +92,28 @@ export const RenderResponseSchema = z.object({
   warnings: z.array(z.string()),
   artifacts: z.record(ArtifactRefSchema),
   degrade_reason: z.string().optional(),
+  // WHY the live illustration provider could not deliver, as one token from a
+  // closed set (`credit | auth | rate_limit | timeout | unavailable |
+  // unknown` — see claimscene/degrade.py). Present only when a live provider
+  // was configured and failed. Kept as a plain string rather than a zod enum
+  // on purpose: a server that learns a new kind must not fail this parse and
+  // blank the whole sealed case — lib/degrade.ts falls back to the "unknown"
+  // wording for a token it does not recognise.
+  degrade_kind: z.string().optional(),
 });
 export type RenderResponse = z.infer<typeof RenderResponseSchema>;
+
+/** Measured render durations (GET /cases/render/estimate) — how long a render
+ *  actually takes on THIS deployment, from the last handful of completed ones.
+ *  `samples: 0` with null durations is an honest answer, not an error: nothing
+ *  has been timed here yet, and the UI says exactly that. */
+export const RenderEstimateSchema = z.object({
+  samples: z.number(),
+  typical_seconds: z.number().nullable(),
+  slow_seconds: z.number().nullable(),
+  mode: z.string().optional(),
+});
+export type RenderEstimate = z.infer<typeof RenderEstimateSchema>;
 
 // Async submit + poll (POST /cases/render/jobs / GET /cases/render/jobs/{job_id})
 // — the non-blocking counterpart to POST /cases/render for a caller that
@@ -356,6 +376,31 @@ export const claimsceneApi = {
       body: renderForm(req),
       ...(auth ? { headers: auth } : {}),
     });
+  },
+
+  /** A sealed case, rebuilt server-side into the same shape a fresh render
+   *  returns (GET /cases/{id}/result) — what makes a case resumable after the
+   *  tab that made it is gone. A case this caller cannot see is a 404, which
+   *  is deliberately the SAME answer as an id that never existed: a link to
+   *  someone else's case must not confirm that it exists. */
+  async caseResult(caseId: string): Promise<RenderResponse> {
+    const auth = await withAuth();
+    return request(
+      `/cases/${encodeURIComponent(caseId)}/result`,
+      RenderResponseSchema,
+      auth ? { headers: auth } : undefined,
+    );
+  },
+
+  /** How long a render actually takes here, measured over recent completed
+   *  ones (GET /cases/render/estimate). */
+  async renderEstimate(): Promise<RenderEstimate> {
+    const auth = await withAuth();
+    return request(
+      "/cases/render/estimate",
+      RenderEstimateSchema,
+      auth ? { headers: auth } : undefined,
+    );
   },
 
   /** The parsed sealed manifest (provenance display). */

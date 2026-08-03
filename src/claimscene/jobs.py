@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import secrets
 from datetime import datetime, timezone
 from typing import Any
@@ -154,3 +155,103 @@ def mark_failed(storage: StorageBackend, job_id: str, exc: BaseException) -> dic
     # shape).
     _log.warning("job %r failed: %s: %s", job_id, type(exc).__name__, exc)
     return _update(storage, job_id, status="failed", error=type(exc).__name__)
+
+
+# ── measured render durations (the "how long will this take" answer) ──────────
+# A live render takes minutes, and the honest way to say how many is to measure
+# it rather than print a number someone once guessed. Every completed render
+# appends how long it actually took, and ``GET /cases/render/estimate`` (see
+# ``claimscene.api``) summarises the recent ones. With nothing recorded yet the
+# API says exactly that, and the client says "we have not timed one here yet"
+# instead of inventing a figure.
+
+#: Rolling sample file. Two segments, like a job status key's prefix — it can
+#: never collide with a case artifact key (five segments; see
+#: ``claimscene.keys.make_key``).
+DURATIONS_KEY = f"{_KEY_PREFIX}/durations.json"
+
+#: How many recent renders the estimate is computed over. Small on purpose: a
+#: change in model, preset or provider should show up in the estimate within a
+#: handful of renders, not be diluted by months of history.
+MAX_DURATION_SAMPLES = 20
+
+
+def read_durations(storage: StorageBackend) -> list[dict]:
+    """Recorded render durations, oldest first. ``[]`` when nothing is recorded.
+
+    Honest-degrade like :func:`read`: a missing object, a storage error or
+    corrupt JSON all read as "no measurements", so the estimate endpoint says
+    it has none rather than failing.
+    """
+    try:
+        parsed: Any = json.loads(storage.get(DURATIONS_KEY))
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [row for row in parsed if isinstance(row, dict) and "seconds" in row]
+
+
+def record_duration(storage: StorageBackend, seconds: float, *, degraded: bool) -> None:
+    """Append one completed render's wall-clock duration. Never raises.
+
+    ``degraded`` records whether that run produced a real generative
+    illustration or the offline placeholder, because the two have wildly
+    different durations and only one of them answers "how long will MY live
+    render take" (see the estimate endpoint's filtering).
+
+    Read-modify-write on a single small object, with no lock: two renders
+    finishing within the same instant can drop one sample. That is acceptable
+    for a rolling estimate and deliberately not worth a coordination mechanism
+    — a lost sample changes a median by seconds. Any failure at all is
+    swallowed: a bookkeeping write must never turn a sealed case into an error.
+    """
+    try:
+        samples = read_durations(storage)
+        samples.append({
+            "seconds": round(float(seconds), 1),
+            "degraded": bool(degraded),
+            "at": _now(),
+        })
+        storage.put(
+            DURATIONS_KEY,
+            json.dumps(samples[-MAX_DURATION_SAMPLES:], indent=2).encode("utf-8"),
+            content_type="application/json",
+        )
+    except Exception:  # pragma: no cover - defensive; storage is already tested
+        _log.warning("could not record render duration", exc_info=True)
+
+
+def _nearest_rank(values: list[float], percentile: float) -> float:
+    """Nearest-rank percentile — no interpolation between samples.
+
+    With a handful of samples, an interpolated percentile invents a duration
+    that no render ever took. Nearest-rank always returns a number that really
+    happened, which is the claim we want to be able to defend.
+    """
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, math.ceil(percentile * len(ordered)) - 1))
+    return ordered[index]
+
+
+def estimate(samples: list[dict]) -> dict:
+    """Summarise durations into ``{samples, typical_seconds, slow_seconds}``.
+
+    ``typical`` is the median and ``slow`` the 90th percentile (nearest rank),
+    both rounded to whole seconds — a range, not a promise. With no samples
+    both are ``None`` and ``samples`` is ``0``: the caller must then say it
+    does not know, not fall back to a fabricated default.
+    """
+    values = []
+    for row in samples:
+        try:
+            values.append(float(row["seconds"]))
+        except (TypeError, ValueError, KeyError):  # pragma: no cover - defensive
+            continue
+    if not values:
+        return {"samples": 0, "typical_seconds": None, "slow_seconds": None}
+    return {
+        "samples": len(values),
+        "typical_seconds": round(_nearest_rank(values, 0.5)),
+        "slow_seconds": round(_nearest_rank(values, 0.9)),
+    }

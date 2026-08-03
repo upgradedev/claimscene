@@ -1,11 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { DisclosureBanner } from "./components/DisclosureBanner";
 import { Hero } from "./components/Hero";
 import { Studio } from "./components/Studio";
 import { MyCases } from "./components/MyCases";
+import { ResumedCase } from "./components/ResumedCase";
+import { caseHash, parseHash, replaceHash, type Route } from "./lib/route";
 import { useCaseStore } from "./store/useCaseStore";
+
+const readRoute = (): Route =>
+  parseHash(typeof window === "undefined" ? "" : window.location.hash);
 
 export default function App() {
   const [started, setStarted] = useState(false);
@@ -14,18 +19,75 @@ export default function App() {
   // (every build today) never has any control that could flip this, and this
   // branch of the render below is dead code for guest, not just untriggered.
   const [libraryOpen, setLibraryOpen] = useState(false);
+  // What the URL names. A case id in the address bar is what lets a case
+  // survive a refresh, an accidental close, or being reopened tomorrow. Once
+  // a resumed case is handed to the store this drops back to `home`: the URL
+  // has done its job and the studio takes over, exactly as after a fresh
+  // render (the address bar keeps showing the case, written by the store).
+  const [route, setRoute] = useState<Route>(readRoute);
   const reset = useCaseStore((s) => s.reset);
 
-  const start = () => {
-    reset();
+  const start = useCallback(() => {
+    reset(); // also points the URL back at #start
+    setRoute({ kind: "start" });
     setStarted(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }, [reset]);
 
-  // Deep-link: /#start jumps straight into the studio.
+  // React to REAL navigation only: a pasted link, the back button, someone
+  // editing the address bar. The app's own URL writes go through
+  // history.replaceState (see lib/route.ts), which fires no hashchange, so
+  // sealing a case can never bounce the wizard into its own resume view.
   useEffect(() => {
-    if (window.location.hash === "#start") setStarted(true);
+    const onHashChange = () => {
+      const raw = window.location.hash;
+      const next = parseHash(raw);
+      // An in-page anchor is not a route: the skip link at the top of this
+      // file navigates to #main, and treating that as "no case named" would
+      // both throw the visitor out of whatever they were doing and drop the
+      // case id from the address bar. Ignore it, and put the open case's own
+      // link back so it survives a later refresh.
+      if (next.kind === "home" && raw !== "" && raw !== "#") {
+        const open = useCaseStore.getState().result;
+        if (open) replaceHash(caseHash(open.case_id));
+        return;
+      }
+      // Already showing exactly the case the URL names (this is the URL the
+      // store itself wrote when the case was sealed or resumed). Re-entering
+      // the resume view for it would replace a finished case with a loading
+      // panel that never resolves, because the case is already here.
+      if (next.kind === "case" && useCaseStore.getState().result?.case_id === next.id) {
+        return;
+      }
+      setRoute(next);
+      if (next.kind === "start") setStarted(true);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Deep-link on first load: /#start jumps straight into the studio.
+  useEffect(() => {
+    if (route.kind === "start") setStarted(true);
+    // First load only; later changes arrive through the hashchange listener.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A resumed case reached the store — hand the visitor to the studio, which
+  // shows its result step. From there it behaves exactly like a case rendered
+  // a moment ago: same panels, downloads, provenance and "New case" button.
+  const onResumed = useCallback(() => {
+    setRoute({ kind: "home" });
+    setStarted(true);
+  }, []);
+
+  const onStartNewFromResume = useCallback(() => {
+    setRoute({ kind: "start" });
+    start();
+  }, [start]);
+
+  const resuming =
+    route.kind === "case" || route.kind === "job" || route.kind === "unreadable";
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -50,6 +112,8 @@ export default function App() {
       <main id="main" tabIndex={-1} className="flex-1 outline-none">
         {libraryOpen ? (
           <MyCases onBack={() => setLibraryOpen(false)} />
+        ) : resuming ? (
+          <ResumedCase route={route} onStartNew={onStartNewFromResume} onLoaded={onResumed} />
         ) : started ? (
           <Studio />
         ) : (

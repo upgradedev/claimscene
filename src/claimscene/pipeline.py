@@ -381,6 +381,14 @@ class CasePipeline:
                 # ``provenance.AUTHORSHIP_NOTE`` for the exact sealed text
                 # and ``provenance.verify_all``'s matching structural check.
                 "authorship_note": AUTHORSHIP_NOTE,
+                # Why the live provider was not used, when it was configured
+                # and failed (see ``api._run_render`` and
+                # ``claimscene.degrade``). The key is OMITTED entirely when
+                # there was no live failure, so a normal run — live or a
+                # deployment with no provider configured — seals the exact
+                # bytes it always did. One closed-vocabulary token, never the
+                # upstream error text: the manifest is a public artifact.
+                **({"degrade_kind": spec.degrade_kind} if spec.degrade_kind else {}),
             },
             report_sha256=result.artifacts["report"].sha256,
             review=review,

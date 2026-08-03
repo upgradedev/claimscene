@@ -136,4 +136,17 @@ describe("useCaseStore", () => {
     expect(useCaseStore.getState().scene?.sequence).toEqual(["impact"]);
     expect(useCaseStore.getState().proposedScene?.sequence).toEqual(emptyScene().sequence);
   });
+
+  it("names the sealed case in the URL, and drops it again on reset", () => {
+    // The store owns this rather than a component, so a case sealed by the
+    // wizard and one reopened from a link both leave a URL worth keeping.
+    window.history.replaceState(null, "", "/");
+    useCaseStore.getState().setResult({ case_id: "sealed-7" } as never);
+    expect(window.location.hash).toBe("#case/sealed-7");
+    expect(useCaseStore.getState().step).toBe("result");
+
+    useCaseStore.getState().reset();
+    expect(window.location.hash).toBe("#start");
+    expect(useCaseStore.getState().result).toBeNull();
+  });
 });
