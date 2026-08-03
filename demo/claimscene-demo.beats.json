@@ -1,7 +1,7 @@
 {
   "schema": "claimscene/demo-beats/v1",
   "title": "ClaimScene — narrated demo walkthrough",
-  "description": "Per-beat, audio-locked script. build_video.py synthesizes each narration line (ElevenLabs), locks the beat's visual duration to the measured audio, and renders a gentle Ken Burns move across the committed cards in demo/assets/ — real captured screenshots of the running app plus two title cards. check_video.py re-verifies the rendered mp4 against this file. Refreshed 2026-08-02 to match the current product: forensic-CGI illustration seeded from the deterministic schematic, burned-in disclosure, computed camera push, sealed authorship split, direct-manipulation review, and async submit+poll render.",
+  "description": "Per-beat, audio-locked script. build_video.py synthesizes each narration line (ElevenLabs), locks the beat's visual duration to the measured audio, and renders a gentle Ken Burns move across the committed cards in demo/assets/ — real captured screenshots of the running app plus two title cards. check_video.py re-verifies the rendered mp4 against this file. A screenshot goes stale the moment the screen changes, so each refresh records what was reshot and from which commit. The 04-review and 06-reveal cards were recaptured on 2026-08-03 from the live Cloud Run deployment running commit 8dc5279, so the video now shows the two honesty disclosures shipped in 4a477ee (what sealing does and does not mean, and that confirming a field is not verifying it) and the enlarged impact-clock faces. The 08, 10, 12 and 13 cards are still the 2026-08-02 set shot at aab8123.",
   "voice": { "provider": "elevenlabs", "voice_name": "Brian", "voice_id": "nPczCjzI2devNBz1zQrb", "model_id": "eleven_multilingual_v2" },
   "render": { "fps": 30, "width": 1920, "height": 1080, "tail_seconds": 0.35 },
   "sections": {
@@ -50,9 +50,9 @@
       "kicker": "AI PROPOSES, YOU CONFIRM",
       "card": "claimscene-09-direct-manipulation.png",
       "focus_start": [0.0, 0.0, 1.0, 1.0],
-      "focus_end": [0.50, 0.16, 0.30, 0.55],
-      "caption": "Drag to move. Drag the handle to rotate. Nothing sealed yet.",
-      "narration": "The proposed scene is yours to correct. Click a vehicle to select it, then drag it between the four approaches, or drag its handle around the twelve clock positions. Every edit snaps to the same closed vocabulary, and the schematic redraws live."
+      "focus_end": [0.235, 0.11, 0.53, 0.49],
+      "caption": "Correct anything. Confirming a field is not the same as verifying it.",
+      "narration": "The proposed scene is yours to correct. Click a vehicle, drag it between the four approaches, or drag its handle around the twelve clock positions, and the schematic redraws live. And the app is blunt about what that does not prove. Confirming a field is not the same as verifying it."
     },
     {
       "id": "05-render",
@@ -69,10 +69,10 @@
       "section": 4,
       "kicker": "TWO LAYERS, NEVER BLENDED",
       "card": "claimscene-11-result-illustration.png",
-      "focus_start": [0.0, 0.0, 1.0, 1.0],
-      "focus_end": [0.50, 0.04, 0.245, 0.40],
-      "caption": "The schematic is the reconstruction. The clip is a labeled illustration.",
-      "narration": "Here both layers sit sealed side by side. The schematic on the left is deterministic, drawn by code. The clip on the right is seeded from that same schematic, so its layout is inherited, not requested. A camera push toward the point of impact is computed too, and the disclosure is burned into the pixels, not just asked for in a prompt."
+      "focus_start": [0.235, 0.152, 0.53, 0.51],
+      "focus_end": [0.485, 0.275, 0.28, 0.39],
+      "caption": "Both layers, sealed. Sealed means the files are unchanged, not that the account is verified.",
+      "narration": "Here both layers sit sealed side by side, under a line that spells out what sealed does not mean. Unchanged files, not a verified account. The schematic on the left is deterministic, drawn by code. The clip on the right is seeded from that same schematic, so its layout is inherited, not requested. A camera push toward the point of impact is computed too, and the disclosure is burned into the pixels, not just asked for in a prompt."
     },
     {
       "id": "07-authorship",

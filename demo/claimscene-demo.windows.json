@@ -1,76 +1,76 @@
 {
   "fps": 30,
-  "total": 155.067,
+  "total": 162.067,
   "windows": [
     {
       "id": "01-hook",
       "section": 1,
       "start": 0.0,
-      "end": 15.733,
-      "dur": 15.733
+      "end": 15.133,
+      "dur": 15.133
     },
     {
       "id": "02-problem",
       "section": 2,
-      "start": 15.733,
-      "end": 31.0,
-      "dur": 15.267
+      "start": 15.133,
+      "end": 32.2,
+      "dur": 17.067
     },
     {
       "id": "03-photos",
       "section": 3,
-      "start": 31.0,
-      "end": 47.7,
-      "dur": 16.7
+      "start": 32.2,
+      "end": 48.0,
+      "dur": 15.8
     },
     {
       "id": "04-review",
       "section": 3,
-      "start": 47.7,
-      "end": 62.433,
-      "dur": 14.733
+      "start": 48.0,
+      "end": 64.667,
+      "dur": 16.667
     },
     {
       "id": "05-render",
       "section": 4,
-      "start": 62.433,
-      "end": 76.867,
-      "dur": 14.433
+      "start": 64.667,
+      "end": 78.2,
+      "dur": 13.533
     },
     {
       "id": "06-reveal",
       "section": 4,
-      "start": 76.867,
-      "end": 96.9,
-      "dur": 20.033
+      "start": 78.2,
+      "end": 106.033,
+      "dur": 27.833
     },
     {
       "id": "07-authorship",
       "section": 5,
-      "start": 96.9,
-      "end": 118.767,
-      "dur": 21.867
+      "start": 106.033,
+      "end": 127.0,
+      "dur": 20.967
     },
     {
       "id": "08-verify",
       "section": 5,
-      "start": 118.767,
-      "end": 130.067,
-      "dur": 11.3
+      "start": 127.0,
+      "end": 137.533,
+      "dur": 10.533
     },
     {
       "id": "09-measured",
       "section": 6,
-      "start": 130.067,
-      "end": 142.633,
+      "start": 137.533,
+      "end": 150.1,
       "dur": 12.567
     },
     {
       "id": "10-close",
       "section": 7,
-      "start": 142.633,
-      "end": 155.067,
-      "dur": 12.433
+      "start": 150.1,
+      "end": 162.067,
+      "dur": 11.967
     }
   ]
 }
