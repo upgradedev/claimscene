@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from claimscene.adapters.fakes import _scene_left_cross, _scene_roundabout_sideswipe
+from claimscene.adapters.fakes import (
+    _scene_left_cross,
+    _scene_parking_reverse,
+    _scene_rear_end,
+    _scene_roundabout_sideswipe,
+)
 from claimscene.layout import LayoutEngine
 from claimscene.provenance import WATERMARK
 from claimscene.schematic import (
@@ -14,6 +19,7 @@ from claimscene.schematic import (
     build_static_svg,
     impact_frame_index,
     render_frame,
+    seed_scale_for,
     world_to_pixel,
 )
 
@@ -88,7 +94,7 @@ def test_seed_png_is_a_distinct_unannotated_impact_frame(timeline):
     assert art.seed_scale > 0
     assert art.seed_png == render_frame(
         timeline, impact_frame_index(timeline), annotate=False,
-        scale=art.seed_scale)
+        seed_style=True, scale=art.seed_scale)
 
 
 def test_render_frame_annotate_false_is_opt_in_and_differs_from_default(timeline):
@@ -118,12 +124,20 @@ def test_frames_vary_over_time(timeline):
 
 
 def test_every_layout_template_renders():
-    for builder in (_scene_left_cross, _scene_roundabout_sideswipe):
+    for builder in (_scene_rear_end, _scene_left_cross, _scene_parking_reverse,
+                    _scene_roundabout_sideswipe):
         timeline = LayoutEngine().build(builder())
         svg = build_static_svg(timeline)
         assert svg.startswith("<svg") and svg.endswith("</svg>")
         frame = render_frame(timeline, 0)
         assert frame.startswith(PNG_MAGIC)
+        # The seed style derives its kerb from whatever the layout's own
+        # drivable surface happens to be, so every template has to survive
+        # it -- including the roundabout, whose surface has a hole in it,
+        # and the parking lot, whose "junction" is a single slab.
+        seed = render_frame(timeline, 0, annotate=False, seed_style=True)
+        assert seed.startswith(PNG_MAGIC)
+        assert seed != frame
 
 
 # ── seed framing ────────────────────────────────────────────────────────────
@@ -179,3 +193,133 @@ def test_seed_framing_never_changes_the_sealed_artifacts():
     assert art.seed_scale > 8.0
     assert art.seed_png != render_frame(tl, i, width=960, height=720, scale=8.0,
                                         annotate=False)
+
+
+# ── seed road legibility: the road has to constrain where a vehicle can be ───
+def _relative_luminance(rgb: tuple[int, int, int]) -> float:
+    """WCAG relative luminance, so the assertions below are in the same unit
+    the defect was measured in."""
+    def channel(v: int) -> float:
+        f = v / 255.0
+        return f / 12.92 if f <= 0.04045 else ((f + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def _contrast_ratio(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    la, lb = _relative_luminance(a), _relative_luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _open_frame(png: bytes):
+    import io
+
+    from PIL import Image
+    return Image.open(io.BytesIO(png)).convert("RGB")
+
+
+def _patch_median(png: bytes, world_xy: tuple[float, float], scale: float
+                  ) -> tuple[int, int, int]:
+    """Median colour of a small patch around a WORLD point in the render.
+
+    A median over a patch rather than one pixel on purpose: the blueprint
+    render this is compared against draws a survey grid, and a single sample
+    that happened to land on a grid line would measure the grid instead of
+    the surface under it.
+    """
+    img = _open_frame(png)
+    px, py = world_to_pixel(*world_xy, scale=scale)
+    xs = range(int(px) - 4, int(px) + 5)
+    ys = range(int(py) - 4, int(py) + 5)
+    samples = [img.getpixel((x, y)) for x in xs for y in ys]
+    return tuple(sorted(c[i] for c in samples)[len(samples) // 2] for i in range(3))
+
+
+#: A point on the main carriageway, and one out in the verge, both on the
+#: same side of the T-junction and both well clear of the vehicles, the
+#: contact burst and the centre line. In metres, world frame.
+_ON_CARRIAGEWAY = (-12.0, -2.0)
+_OFF_CARRIAGEWAY = (-12.0, 9.0)
+
+
+def test_seed_makes_the_drivable_surface_dominant_and_high_contrast():
+    """The measured root cause of vehicles rendering off the carriageway.
+
+    In the blueprint palette the road is ``#16242e`` on a ``#0e1a22``
+    background: a 1.11:1 contrast ratio, with the survey grid BRIGHTER than
+    the carriageway. Rendered, the seed contains no visible road at all, so
+    an image-to-video model handed it has no surface to keep vehicles on and
+    the whole frame reads as open ground. Asking the model in words not to
+    drive off the road was already tried and failed (handover 4b, attempt
+    #25); making the road unmistakable in the seed itself is the lever that
+    is actually ours.
+    """
+    tl = _t_junction_timeline()
+    scale = seed_scale_for(tl)
+    i = impact_frame_index(tl)
+
+    seed = render_frame(tl, i, scale=scale, annotate=False, seed_style=True)
+    road = _patch_median(seed, _ON_CARRIAGEWAY, scale)
+    verge = _patch_median(seed, _OFF_CARRIAGEWAY, scale)
+    assert _contrast_ratio(road, verge) > 2.5, (
+        f"carriageway {road} vs verge {verge} is only "
+        f"{_contrast_ratio(road, verge):.2f}:1 -- the road is not visible "
+        "enough in the seed to constrain anything")
+    # The carriageway must be the BRIGHTER of the two: the drivable surface
+    # is what the eye (and the model) should land on first.
+    assert _relative_luminance(road) > _relative_luminance(verge)
+
+    # And the same two points in the palette this replaced, which is the
+    # measurement that justifies the change existing at all.
+    blueprint = render_frame(tl, i, scale=scale, annotate=False)
+    assert _contrast_ratio(_patch_median(blueprint, _ON_CARRIAGEWAY, scale),
+                           _patch_median(blueprint, _OFF_CARRIAGEWAY, scale)) < 1.5
+
+
+def test_seed_draws_a_bright_kerb_where_the_carriageway_ends():
+    """A high-contrast surface still needs its boundary drawn, so "off the
+    carriageway" is a hard visual edge rather than a gradient.
+
+    The kerb is derived from the drivable surface's own outline rather than
+    enumerated per layout (see ``_draw_seed_kerbs``), which is why it can
+    wrap a T-junction's corners without drawing a wall across its mouth.
+    """
+    tl = _t_junction_timeline()
+    scale = seed_scale_for(tl)
+    i = impact_frame_index(tl)
+    seed = _open_frame(render_frame(tl, i, scale=scale, annotate=False,
+                                    seed_style=True))
+    blueprint = _open_frame(render_frame(tl, i, scale=scale, annotate=False))
+
+    # Scan the column through _ON_CARRIAGEWAY, across the road's north edge.
+    col_x = int(world_to_pixel(*_ON_CARRIAGEWAY, scale=scale)[0])
+    edge_y = int(world_to_pixel(0.0, tl.junction_half_extent_m, scale=scale)[1])
+    band = range(edge_y - 6, edge_y + 7)
+    assert max(_relative_luminance(seed.getpixel((col_x, y))) for y in band) > 0.6
+    # Nothing like it in the palette this replaced.
+    assert max(_relative_luminance(blueprint.getpixel((col_x, y))) for y in band) < 0.6
+
+
+def test_seed_style_is_opt_in_and_never_reaches_a_sealed_artifact():
+    """``seed_style`` defaults off, and the sealed artifacts never ask for it.
+
+    ``hero_png``, the animation frames and the SVG are what a case seals and
+    re-verifies against. A change made for the generative layer's benefit
+    must not move a single byte of them.
+    """
+    tl = _t_junction_timeline()
+    i = impact_frame_index(tl)
+    assert render_frame(tl, i, title="t") == render_frame(tl, i, title="t",
+                                                          seed_style=False)
+    assert render_frame(tl, i, annotate=False) != render_frame(
+        tl, i, annotate=False, seed_style=True)
+
+    art = PillowSchematicRenderer(animate=False).render(tl, title="t")
+    assert art.hero_png == render_frame(tl, i, title="t", scale=8.0)
+    assert all(f == render_frame(tl, n, title="t", scale=8.0)
+               for n, f in enumerate(art.frames_png))
+    assert art.static_svg == build_static_svg(tl, title="t", scale=8.0)
+    # The seed, and only the seed, is the styled one.
+    assert art.seed_png == render_frame(tl, i, scale=art.seed_scale,
+                                        annotate=False, seed_style=True)

@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 from .layout import TimedPose, Timeline, clock_point_world
 from .provenance import WATERMARK
@@ -54,6 +54,36 @@ VEHICLE_FILL: dict[VehicleColor, str] = {
 SEVERITY_FILL = {"scratch": "#ffd166", "dent": "#f4845f", "crush": "#ef476f"}
 
 _ROAD_EXTENT = 60.0  # how far the road bands extend from the origin (m)
+
+# ── seed palette (illustration seed ONLY -- never a sealed artifact) ─────────
+# The blueprint palette above is designed to be READ by a person who has been
+# told they are looking at a diagram. It is a terrible instruction to an
+# image-to-video model, and this was measured rather than guessed: ROAD_FILL
+# against BG is a 1.11:1 luminance contrast ratio, and GRID (the survey
+# lines) is BRIGHTER than the carriageway. Rendered, the seed contains no
+# road at all -- it reads as one dark textured field with two bright shapes
+# on it. A model handed that has no surface to keep the vehicles on, which is
+# exactly what live renders produced: a vehicle arriving across ground that
+# is not a carriageway.
+#
+# The seed therefore gets its own palette, chosen so that "off the
+# carriageway" is visually impossible to mistake for a road: a dominant,
+# high-contrast drivable surface, a distinctly non-drivable surround, a
+# bright kerb line along every carriageway edge, and no survey grid to read
+# as abstract technical drawing. Nothing here is ever sealed -- every sealed
+# artifact keeps the blueprint palette and its exact bytes (see
+# ``render_frame``'s ``seed_style`` flag).
+SEED_VERGE = "#26301f"    # off-carriageway ground; reads as verge, not road
+SEED_ASPHALT = "#767d85"  # the drivable surface: dominant and unmistakable
+SEED_KERB = "#eef1f4"     # bright edge line marking where the carriageway ends
+SEED_LANE = "#f2f4f6"     # lane / centre markings, on the carriageway
+SEED_TRAIL = "#5d646b"    # motion trail, as a tyre mark on the road surface
+SEED_OUTLINE = "#1b1f23"  # vehicle body + nose outline, legible on any fill
+
+#: Kerb thickness in pixels, as the erosion kernel used to derive the
+#: carriageway's own outline (see :func:`_draw_seed_kerbs`). Odd by
+#: requirement of Pillow's rank filter.
+SEED_KERB_PX = 7
 
 
 def _xml_escape(text: str) -> str:
@@ -104,52 +134,82 @@ def ffmpeg_available() -> bool:
 
 # ── shared drawing primitives (world meters; consumed by SVG and PNG) ────────
 def _road_primitives(timeline: Timeline) -> list[dict]:
-    """Road template as primitive shapes, in world coordinates."""
+    """Road template as primitive shapes, in world coordinates.
+
+    Every primitive carries a ``role``, which is metadata only: the SVG and
+    PNG drawing paths both ignore it, so tagging changed no rendered byte.
+    It exists so the illustration-seed pass can restyle the road (and derive
+    the carriageway's own outline for the kerb) without re-deriving, or
+    duplicating, any of this geometry. The roles are
+
+    ``surface``
+        Drivable carriageway. The union of these shapes IS the road, and is
+        what a vehicle may legally be on.
+    ``hole``
+        Cut out of that union (the roundabout's central island): drawn over
+        the surface, and not drivable.
+    ``lane``
+        Markings painted ON the carriageway (centre lines, parking bays).
+    ``edge``
+        The blueprint's own carriageway edge stroke. The seed pass omits it
+        and derives a kerb from the ``surface`` union instead, which is
+        correct for every layout including the ones where these strokes are
+        absent altogether.
+    ``signal``
+        Scene furniture beside the road (see :func:`_signal_primitives`) --
+        never part of the drivable surface.
+    """
     j = timeline.junction_half_extent_m
     e = _ROAD_EXTENT
     layout = timeline.road.layout
     prims: list[dict] = []
 
     def band_v(half: float) -> dict:
-        return {"kind": "rect", "x0": -half, "y0": -e, "x1": half, "y1": e, "fill": ROAD_FILL}
+        return {"kind": "rect", "x0": -half, "y0": -e, "x1": half, "y1": e,
+                "fill": ROAD_FILL, "role": "surface"}
 
     def band_h(half: float) -> dict:
-        return {"kind": "rect", "x0": -e, "y0": -half, "x1": e, "y1": half, "fill": ROAD_FILL}
+        return {"kind": "rect", "x0": -e, "y0": -half, "x1": e, "y1": half,
+                "fill": ROAD_FILL, "role": "surface"}
 
     def center_v() -> dict:
         return {"kind": "line", "x0": 0, "y0": -e, "x1": 0, "y1": e,
-                "stroke": CENTER_LINE, "width": 1.5, "dash": (6, 4)}
+                "stroke": CENTER_LINE, "width": 1.5, "dash": (6, 4), "role": "lane"}
 
     def center_h() -> dict:
         return {"kind": "line", "x0": -e, "y0": 0, "x1": e, "y1": 0,
-                "stroke": CENTER_LINE, "width": 1.5, "dash": (6, 4)}
+                "stroke": CENTER_LINE, "width": 1.5, "dash": (6, 4), "role": "lane"}
 
     if layout is RoadLayout.straight:
         prims += [band_v(j), center_v()]
         prims += [{"kind": "line", "x0": s * j, "y0": -e, "x1": s * j, "y1": e,
-                   "stroke": ROAD_EDGE, "width": 2, "dash": None} for s in (-1, 1)]
+                   "stroke": ROAD_EDGE, "width": 2, "dash": None, "role": "edge"}
+                  for s in (-1, 1)]
     elif layout is RoadLayout.x_intersection:
         prims += [band_v(j), band_h(j), center_v(), center_h()]
     elif layout is RoadLayout.t_intersection:
         prims += [band_h(j), center_h()]
-        prims += [{"kind": "rect", "x0": -j, "y0": -e, "x1": j, "y1": 0, "fill": ROAD_FILL}]
+        prims += [{"kind": "rect", "x0": -j, "y0": -e, "x1": j, "y1": 0,
+                   "fill": ROAD_FILL, "role": "surface"}]
         prims += [{"kind": "line", "x0": 0, "y0": -e, "x1": 0, "y1": -j,
-                   "stroke": CENTER_LINE, "width": 1.5, "dash": (6, 4)}]
+                   "stroke": CENTER_LINE, "width": 1.5, "dash": (6, 4), "role": "lane"}]
     elif layout is RoadLayout.roundabout:
         ring_outer = j + 2 * 1.75
         prims += [band_v(1.75 * 2), band_h(1.75 * 2)]
         prims += [{"kind": "circle", "cx": 0, "cy": 0, "r": ring_outer,
-                   "fill": ROAD_FILL, "stroke": ROAD_EDGE, "width": 2}]
+                   "fill": ROAD_FILL, "stroke": ROAD_EDGE, "width": 2,
+                   "role": "surface"}]
         prims += [{"kind": "circle", "cx": 0, "cy": 0, "r": j * 0.75,
-                   "fill": BG, "stroke": CENTER_LINE, "width": 1.5}]
+                   "fill": BG, "stroke": CENTER_LINE, "width": 1.5, "role": "hole"}]
     elif layout is RoadLayout.parking_lot:
         prims += [{"kind": "rect", "x0": -j - 12, "y0": -e * 0.6, "x1": j + 12,
-                   "y1": e * 0.6, "fill": ROAD_FILL}]
+                   "y1": e * 0.6, "fill": ROAD_FILL, "role": "surface"}]
         for i in range(-5, 6):
             y = i * 5.5
             for sx in (-1, 1):
                 prims += [{"kind": "line", "x0": sx * j, "y0": y, "x1": sx * (j + 10),
-                           "y1": y, "stroke": LANE_DASH, "width": 1, "dash": None}]
+                           "y1": y, "stroke": LANE_DASH, "width": 1, "dash": None,
+                           "role": "lane"}]
 
     prims += _signal_primitives(timeline, j)
     return prims
@@ -160,20 +220,20 @@ def _signal_primitives(timeline: Timeline, j: float) -> list[dict]:
     x, y = j + 2.0, j + 2.0
     if sig is Signal.stop_sign:
         return [{"kind": "circle", "cx": x, "cy": y, "r": 1.2, "fill": "#c0392b",
-                 "stroke": "#e8e8e8", "width": 1.5}]
+                 "stroke": "#e8e8e8", "width": 1.5, "role": "signal"}]
     if sig is Signal.traffic_light:
         return [
             {"kind": "circle", "cx": x, "cy": y + 1.2, "r": 0.6, "fill": "#d1495b",
-             "stroke": ROAD_EDGE, "width": 1},
+             "stroke": ROAD_EDGE, "width": 1, "role": "signal"},
             {"kind": "circle", "cx": x, "cy": y, "r": 0.6, "fill": "#e3b23c",
-             "stroke": ROAD_EDGE, "width": 1},
+             "stroke": ROAD_EDGE, "width": 1, "role": "signal"},
             {"kind": "circle", "cx": x, "cy": y - 1.2, "r": 0.6, "fill": "#4c9f70",
-             "stroke": ROAD_EDGE, "width": 1},
+             "stroke": ROAD_EDGE, "width": 1, "role": "signal"},
         ]
     if sig is Signal.yield_sign:
         return [{"kind": "poly", "points": [(x - 1.2, y + 1.0), (x + 1.2, y + 1.0),
                                             (x, y - 1.0)],
-                 "fill": "#e3b23c"}]
+                 "fill": "#e3b23c", "role": "signal"}]
     return []
 
 
@@ -475,6 +535,64 @@ def _draw_prim(draw: ImageDraw.ImageDraw, prim: dict, view: _View) -> None:
         draw.polygon(pts, fill=_hex_rgb(prim["fill"]))
 
 
+def _seed_prim(prim: dict) -> dict | None:
+    """Restyle one road primitive for the illustration seed, or drop it.
+
+    Pure recolouring: every coordinate is passed through untouched, so the
+    seed's world-to-pixel mapping is identical to the blueprint's and
+    ``camera.py``'s push (which is computed in exactly that mapping) stays
+    correct. Returns ``None`` for a primitive the seed omits.
+    """
+    role = prim.get("role")
+    if role == "surface":
+        return {**prim, "fill": SEED_ASPHALT, "stroke": None}
+    if role == "hole":
+        return {**prim, "fill": SEED_VERGE, "stroke": None}
+    if role == "lane":
+        return {**prim, "stroke": SEED_LANE, "width": max(2, prim.get("width", 1))}
+    if role == "edge":
+        # The kerb pass derives a correct edge from the surface union for
+        # every layout; the blueprint's own edge stroke would double it.
+        return None
+    return prim  # signal furniture keeps its real-world colours
+
+
+def _draw_seed_kerbs(img: Image.Image, timeline: Timeline, view: _View) -> None:
+    """Paint a bright kerb line along the whole carriageway boundary.
+
+    Derived from the drivable surface itself rather than enumerated per
+    layout: the ``surface`` primitives are rasterised into a mask, the
+    ``hole`` primitives are punched out of it, the mask is eroded, and the
+    difference between the two is the union's own outline. That is a kerb
+    that cannot be geometrically wrong -- it never knows which layout it is
+    looking at, so it draws no wall across a junction mouth, and it needs no
+    new case when a layout is added.
+
+    The outline sits just INSIDE the carriageway, which is what an edge line
+    looks like from above anyway. The frame's own border is cleared
+    afterwards, because a road running off the edge of the seed is not a
+    road that ends there and must not be drawn as if it were.
+    """
+    r = SEED_KERB_PX // 2
+    # Rasterised in RGB (the one mode ``_draw_prim`` speaks) and flattened,
+    # so the mask is built by the same code that draws the visible road and
+    # cannot drift from it.
+    canvas = Image.new("RGB", (img.width, img.height), (0, 0, 0))
+    mdraw = ImageDraw.Draw(canvas)
+    for prim in _road_primitives(timeline):
+        role = prim.get("role")
+        if role in ("surface", "hole"):
+            _draw_prim(mdraw, {**prim, "fill": "#ffffff" if role == "surface"
+                               else "#000000", "stroke": None}, view)
+    mask = canvas.convert("L").point(lambda v: 255 if v > 127 else 0)
+    if not mask.getbbox():  # no carriageway in frame (e.g. an empty template)
+        return
+    edge = ImageChops.subtract(mask, mask.filter(ImageFilter.MinFilter(SEED_KERB_PX)))
+    ImageDraw.Draw(edge).rectangle([0, 0, img.width - 1, img.height - 1],
+                                   outline=0, width=r + 1)
+    img.paste(_hex_rgb(SEED_KERB), (0, 0), edge)
+
+
 def _dashed_line(draw, a, b, color, width, on, off) -> None:
     ax, ay = a
     bx, by = b
@@ -492,7 +610,7 @@ def _dashed_line(draw, a, b, color, width, on, off) -> None:
 
 def render_frame(timeline: Timeline, index: int, *, title: str | None = None,
                  width: int = 960, height: int = 720, scale: float = 8.0,
-                 annotate: bool = True) -> bytes:
+                 annotate: bool = True, seed_style: bool = False) -> bytes:
     """Render one frame of the schematic animation (world geometry -> PNG).
 
     ``annotate=True`` (the default, byte-identical to every call site that
@@ -511,41 +629,80 @@ def render_frame(timeline: Timeline, index: int, *, title: str | None = None,
     that promise and risk the model garbling inherited text while animating.
     Every SEALED schematic artifact (the hero PNG, every animation frame)
     keeps ``annotate=True`` -- this parameter never changes their bytes.
+
+    ``seed_style=True`` (again, the seed only) additionally swaps the
+    blueprint palette for one built to be read by an image-to-video model
+    rather than by a person: a dominant high-contrast carriageway on a
+    distinctly non-drivable verge, a bright kerb line derived from the
+    carriageway's own outline, no survey grid, and a vehicle outline legible
+    against every body colour. The measured reason, and why it is confined
+    to the seed, is documented at the SEED_* palette constants above.
+    Geometry is untouched -- this flag changes colours and strokes only, so
+    the world-to-pixel mapping (and therefore ``camera.py``'s push, computed
+    in that same mapping) is exactly as it was.
     """
     view = _View(width, height, scale)
-    img = Image.new("RGB", (width, height), _hex_rgb(BG))
+    img = Image.new("RGB", (width, height),
+                    _hex_rgb(SEED_VERGE if seed_style else BG))
     draw = ImageDraw.Draw(img)
 
-    step = 5.0 * scale
-    x = width / 2.0 % step
-    while x < width:
-        draw.line([x, 0, x, height], fill=_hex_rgb(GRID), width=1)
-        x += step
-    y = height / 2.0 % step
-    while y < height:
-        draw.line([0, y, width, y], fill=_hex_rgb(GRID), width=1)
-        y += step
+    if not seed_style:
+        # The survey grid is the blueprint's own scale reference. In the seed
+        # it is worse than useless: it is brighter than the carriageway and
+        # it makes the whole frame read as an abstract technical drawing
+        # rather than as a road with edges.
+        step = 5.0 * scale
+        x = width / 2.0 % step
+        while x < width:
+            draw.line([x, 0, x, height], fill=_hex_rgb(GRID), width=1)
+            x += step
+        y = height / 2.0 % step
+        while y < height:
+            draw.line([0, y, width, y], fill=_hex_rgb(GRID), width=1)
+            y += step
 
-    for prim in _road_primitives(timeline):
-        _draw_prim(draw, prim, view)
+    if seed_style:
+        for prim in _road_primitives(timeline):
+            if prim.get("role") in ("surface", "hole"):
+                styled = _seed_prim(prim)
+                if styled is not None:
+                    _draw_prim(draw, styled, view)
+        # Kerbs go on after the surface and before the markings, so the
+        # carriageway edge is unmistakable and nothing paints over it.
+        _draw_seed_kerbs(img, timeline, view)
+        for prim in _road_primitives(timeline):
+            if prim.get("role") not in ("surface", "hole"):
+                styled = _seed_prim(prim)
+                if styled is not None:
+                    _draw_prim(draw, styled, view)
+    else:
+        for prim in _road_primitives(timeline):
+            _draw_prim(draw, prim, view)
 
     t = timeline.tracks[0].poses[index].t
     impact_i = impact_frame_index(timeline)
 
     for track in timeline.tracks:
         meta = next(v for v in timeline.vehicles if v.id == track.vehicle_id)
-        trail = _hex_rgb(LANE_DASH)
+        trail = _hex_rgb(SEED_TRAIL if seed_style else LANE_DASH)
         pts = [view.px(p.x, p.y) for p in track.poses[: index + 1]]
         if len(pts) >= 2:
             draw.line(pts, fill=trail, width=2)
         pose = track.poses[index]
         corners = [view.px(cx, cy) for cx, cy in
                    _vehicle_corners(pose, meta.length_m, meta.width_m)]
+        outline = _hex_rgb(SEED_OUTLINE if seed_style else BG)
         draw.polygon(corners, fill=_hex_rgb(VEHICLE_FILL[meta.color]),
-                     outline=_hex_rgb(BG))
+                     outline=outline)
         nose = [view.px(nx, ny) for nx, ny in
                 _vehicle_nose(pose, meta.length_m, meta.width_m)]
-        draw.polygon(nose, fill=_hex_rgb(TEXT))
+        # The nose wedge is the seed's only "which way is this facing" cue,
+        # and a light wedge on a white or silver body is no cue at all, so
+        # the seed gives it a dark outline: legible on every body colour.
+        if seed_style:
+            draw.polygon(nose, fill=_hex_rgb(TEXT), outline=outline)
+        else:
+            draw.polygon(nose, fill=_hex_rgb(TEXT))
         if annotate:
             lx, ly = view.px(pose.x, pose.y)
             draw.text((lx, ly - 22), track.vehicle_id, fill=_hex_rgb(TEXT),
@@ -629,7 +786,7 @@ class PillowSchematicRenderer:
             seed_scale = seed_scale_for(timeline, width=self.width, height=self.height)
             seed = render_frame(timeline, impact_i, width=self.width,
                                 height=self.height, scale=seed_scale,
-                                annotate=False)
+                                annotate=False, seed_style=True)
         else:
             hero = b""
             seed = b""
