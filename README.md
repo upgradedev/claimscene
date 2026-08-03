@@ -219,6 +219,22 @@ that did not go through the deploy pipeline (a local run, or CI), which is the
 honest answer rather than a guess, and the deploy script appends `-dirty` if
 the working tree did not match the commit it reports.
 
+**A second origin, same product.** The app is also served from Firebase
+Hosting at **https://upgradegr-claimscene.web.app**, which puts the compiled
+client on a CDN and rewrites every API path (`/health`, `/scenarios`, `/cases`,
+`/me`) to the same Cloud Run service (see [`firebase.json`](firebase.json)).
+There is one API, one bucket, one set of sealed bytes; the mirror is a second
+front door, not a second deployment. Either URL runs the whole product, and
+`/health` through the mirror answers from the same container:
+
+```bash
+curl -s https://upgradegr-claimscene.web.app/health | jq .service   # "claimscene-api"
+```
+
+It is published by [`.github/workflows/firebase-hosting.yml`](.github/workflows/firebase-hosting.yml)
+using the same keyless Workload Identity Federation as the Cloud Run deploy —
+no service-account key is stored in this repository for either.
+
 ## Quickstart (offline, no credentials, ~2 minutes)
 
 ```bash
