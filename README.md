@@ -419,6 +419,19 @@ desynced or over-length video fails the build.
   fails the build if it leaks developer vocabulary at someone who has just had
   a crash (the sealed provenance ledger is exempt on purpose, since there the
   wording is evidence).
+- **CD:** once CI is green on `main`, `deploy-cloudrun.yml` builds and deploys
+  the service, then polls the live `GET /health` and **fails if `build.commit`
+  is not the commit it just built** — a deploy is finished when the running
+  app says so, not when `gcloud` exits 0. It checks out the exact commit CI
+  validated rather than whatever `main` points at by then, so the build stamp
+  never names untested code. Auth is **Workload Identity Federation: no
+  service-account key is stored in this repository.** The Google-side provider
+  carries `assertion.repository=='upgradedev/claimscene'`, so the restriction
+  is enforced by Google rather than by the workflow, which is what makes it
+  safe in a public repo: a copy of the workflow elsewhere is rejected at the
+  token exchange, not by a check someone could edit. The deploy identity holds
+  six roles and cannot enable APIs, create registries or alter secret IAM;
+  those one-time steps are skipped in CI via `DEPLOY_SKIP_PROVISIONING`.
 - ffmpeg tests skip cleanly when ffmpeg is absent (the schematic playback route
   then serves the real hero PNG instead of MP4); `@pytest.mark.live` smokes run
   only when `GMI_API_KEY` is present (never in CI).
