@@ -41,6 +41,9 @@ concurrency:
 env:
   MIRROR_URL: https://upgradegr-claimscene.web.app
   FIREBASE_PROJECT: upgradegr-claimscene
+  # Named explicitly, and also named in firebase.json, so neither the CLI nor a
+  # reader has to infer which site this deploys to.
+  FIREBASE_SITE: upgradegr-claimscene
   # Pinned so a hosting deploy is reproducible rather than "whatever npm served
   # that morning".
   FIREBASE_TOOLS_VERSION: 15.25.1
@@ -77,6 +80,28 @@ jobs:
         with:
           workload_identity_provider: projects/147595510158/locations/global/workloadIdentityPools/github/providers/upgradedev
           service_account: github-deployer@upgradegr-claimscene.iam.gserviceaccount.com
+
+      # The Hosting SITE had never been created on this project, only the
+      # Firebase project itself, so upgradegr-claimscene.web.app answered
+      # Firebase's own "Site Not Found" page. The CLI does not say that: with
+      # no site to resolve it dies on "Assertion failed: resolving hosting
+      # target of a site with no site name or target name", which reads like a
+      # config error in this repo and is not one.
+      #
+      # Creating it is therefore part of the deploy, not a console step someone
+      # has to remember. Idempotent: an existing site is the success case, and
+      # any OTHER failure still stops the run.
+      - name: Ensure the Hosting site exists
+        run: |
+          set -uo pipefail
+          out="$(npx --yes firebase-tools@"${FIREBASE_TOOLS_VERSION}" \
+            hosting:sites:create "${FIREBASE_SITE}" \
+            --project "${FIREBASE_PROJECT}" --non-interactive 2>&1)" && {
+              echo "${out}"; exit 0; }
+          echo "${out}"
+          echo "${out}" | grep -qiE "already exists|ALREADY_EXISTS" \
+            || { echo "could not create the hosting site" >&2; exit 1; }
+          echo "site ${FIREBASE_SITE} already exists"
 
       # firebase-tools picks the federated credentials up from
       # GOOGLE_APPLICATION_CREDENTIALS, which the auth step above wrote. No
