@@ -288,6 +288,26 @@ SEED_FILL_FRAC = 0.62
 SEED_SCALE_MIN = 8.0
 SEED_SCALE_MAX = 26.0
 
+#: Upper bound for the SCHEMATIC's own framing, deliberately tighter than
+#: :data:`SEED_SCALE_MAX`.
+#:
+#: The seed is a single still of the moment of contact, so it can zoom hard.
+#: The schematic is an *animation* of the whole event, and the vehicles start
+#: their approach 40 m out (``LayoutEngine.start_distance_m``). Those two
+#: facts cannot both be satisfied: at 960x720, keeping a 40 m approach on
+#: canvas needs about 9 px/m, which is the near-empty wide view this cap
+#: exists to move away from. So the approach run is what gives, and this
+#: number is where it gives least.
+#:
+#: Measured on the committed 7-scenario eval set, counting frames whose
+#: vehicle centres are off-canvas: at the seed's own 26 px/m the demo
+#: scenario (s05) opens on 5 blank frames of 25 and s06 on 10. At 16 px/m
+#: only s06 still opens blank, and it does so at *every* usable scale
+#: because a lane change on a straight road has no junction to frame
+#: against. Below roughly 14 px/m the legibility win this cap exists for
+#: starts to disappear again.
+SCHEMATIC_SCALE_MAX = 16.0
+
 
 def seed_scale_for(timeline: Timeline, *, width: int = 960, height: int = 720,
                    fill_frac: float = SEED_FILL_FRAC) -> float:
@@ -333,6 +353,28 @@ def seed_scale_for(timeline: Timeline, *, width: int = 960, height: int = 720,
     fit = min(width * fill_frac / (2.0 * half_w) if half_w > 0 else SEED_SCALE_MAX,
               height * fill_frac / (2.0 * half_h) if half_h > 0 else SEED_SCALE_MAX)
     return max(SEED_SCALE_MIN, min(SEED_SCALE_MAX, fit))
+
+
+def schematic_scale_for(timeline: Timeline, *, width: int = 960, height: int = 720) -> float:
+    """Pixels-per-metre the SCHEMATIC itself is drawn at.
+
+    Same fit as :func:`seed_scale_for` -- the impact frame plus the junction's
+    own extent -- under a tighter ceiling (:data:`SCHEMATIC_SCALE_MAX`),
+    because the schematic is an animation of the whole event and the seed is
+    one still of its peak. See that constant for the measurements behind the
+    number.
+
+    Why this exists at all: at the fixed 8 px/m this replaces, a 4.5 m car is
+    3.8% of the frame width, so the factual layer read as a near-empty field
+    with two slivers in it -- next to a well-framed illustration making the
+    same claim. The factual layer should be the legible one.
+
+    Deterministic and pure, and it only ever narrows the view: the result is
+    never below ``SEED_SCALE_MIN``, which is the scale every case sealed
+    before this existed.
+    """
+    return min(SCHEMATIC_SCALE_MAX,
+               seed_scale_for(timeline, width=width, height=height))
 
 
 def impact_frame_index(timeline: Timeline) -> int:
@@ -764,18 +806,33 @@ class PillowSchematicRenderer:
 
     name = "blueprint-pillow"
 
-    def __init__(self, *, width: int = 960, height: int = 720, scale: float = 8.0,
+    def __init__(self, *, width: int = 960, height: int = 720,
+                 scale: float | None = None,
                  fps: int = 8, animate: bool = True) -> None:
+        #: ``None`` (the default) means "frame the case", i.e. defer to
+        #: :func:`schematic_scale_for` per timeline. An explicit number pins
+        #: every render to that scale, which is what the golden-file tests
+        #: want and what any caller reproducing a pre-existing case needs.
         self.width, self.height, self.scale = width, height, scale
         self.fps = fps
         self.animate = animate
 
+    def scale_for(self, timeline: Timeline) -> float:
+        """The pixels-per-metre this renderer will draw ``timeline`` at."""
+        if self.scale is not None:
+            return self.scale
+        return schematic_scale_for(timeline, width=self.width, height=self.height)
+
     def render(self, timeline: Timeline, *, title: str | None = None) -> SchematicArtifacts:
+        # One scale for every sealed artifact of this case: the SVG, all the
+        # frames and therefore the hero. Computed once so the animation can
+        # never drift frame to frame.
+        view_scale = self.scale_for(timeline)
         svg = build_static_svg(timeline, title=title, width=self.width,
-                               height=self.height, scale=self.scale)
+                               height=self.height, scale=view_scale)
         n = len(timeline.tracks[0].poses) if timeline.tracks else 0
         frames = [render_frame(timeline, i, title=title, width=self.width,
-                               height=self.height, scale=self.scale)
+                               height=self.height, scale=view_scale)
                   for i in range(n)]
         if frames:
             impact_i = impact_frame_index(timeline)

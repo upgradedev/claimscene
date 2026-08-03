@@ -98,7 +98,7 @@ from .pipeline import CasePipeline, CaseResult
 from .ports import StorageBackend
 from .provenance import input_record, verify_all
 from .scene import SceneGraph, scene_to_json, semantic_warnings
-from .schematic import build_static_svg
+from .schematic import build_static_svg, schematic_scale_for
 
 _log = logging.getLogger("claimscene.api")
 
@@ -672,7 +672,10 @@ def preview_schematic(scene: SceneGraph) -> dict:
     Warnings are recomputed server-side from the geometry; any client-sent
     ``confidence_notes`` are ignored (never trusted into feedback)."""
     timeline = LayoutEngine().build(scene)
-    svg = build_static_svg(timeline, title="preview")
+    # Framed exactly as the sealed schematic will be, so the reviewer is
+    # editing against the picture the case actually gets, not a wider one.
+    svg = build_static_svg(timeline, title="preview",
+                           scale=schematic_scale_for(timeline))
     warnings = semantic_warnings(scene) + list(timeline.notes)
     return {
         "svg": svg,

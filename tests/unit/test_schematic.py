@@ -175,24 +175,66 @@ def test_seed_scale_is_deterministic():
     assert seed_scale_for(tl) == seed_scale_for(tl)
 
 
-def test_seed_framing_never_changes_the_sealed_artifacts():
-    """The seed gets its own scale; every SEALED artifact keeps the fixed one.
+def test_seed_framing_is_tighter_than_the_schematics_own_framing():
+    """The seed and the schematic are framed separately, and the seed zooms more.
 
-    This is the load-bearing guarantee: hero_png, the animation frames and
-    the SVG are what a case seals and re-verifies against, so a change made
-    for the generative layer's benefit must not move their bytes.
+    The seed is one still of the moment of contact, so it may zoom hard. The
+    schematic is an animation of the whole event, including a 40 m approach
+    run, so it is capped tighter. Both are now framed rather than fixed; what
+    must stay true is the ORDER, since the seed must never be wider than the
+    picture it is seeded from.
     """
-    from claimscene.schematic import PillowSchematicRenderer, render_frame
+    from claimscene.schematic import (
+        SCHEMATIC_SCALE_MAX,
+        SEED_SCALE_MIN,
+        PillowSchematicRenderer,
+        impact_frame_index,
+        render_frame,
+        schematic_scale_for,
+    )
 
     tl = _t_junction_timeline()
     art = PillowSchematicRenderer(animate=False).render(tl, title="t")
-    from claimscene.schematic import impact_frame_index
     i = impact_frame_index(tl)
+    view = schematic_scale_for(tl)
+
+    # Every sealed artifact of a case shares one scale: the SVG, all frames,
+    # and therefore the hero. An animation that drifted scale frame to frame
+    # would be a bug you could only see by playing it.
     assert art.hero_png == render_frame(tl, i, title="t", width=960, height=720,
-                                        scale=8.0)
-    assert art.seed_scale > 8.0
-    assert art.seed_png != render_frame(tl, i, width=960, height=720, scale=8.0,
-                                        annotate=False)
+                                        scale=view)
+    assert all(f == render_frame(tl, n, title="t", width=960, height=720, scale=view)
+               for n, f in enumerate(art.frames_png))
+
+    # Never wider than what every case sealed before framing existed, and
+    # never tighter than the animation cap.
+    assert SEED_SCALE_MIN <= view <= SCHEMATIC_SCALE_MAX
+    # The seed still zooms past the schematic, and is still styled differently.
+    assert art.seed_scale >= view
+    assert art.seed_png != render_frame(tl, i, width=960, height=720,
+                                        scale=art.seed_scale, annotate=False)
+
+
+def test_an_explicit_scale_still_pins_every_byte():
+    """A caller that names a scale gets exactly that scale, forever.
+
+    This is how an already-sealed case stays reproducible: framing is the
+    DEFAULT, not something imposed on a caller who asked for 8 px/m.
+    """
+    from claimscene.schematic import (
+        PillowSchematicRenderer,
+        build_static_svg,
+        impact_frame_index,
+        render_frame,
+    )
+
+    tl = _t_junction_timeline()
+    art = PillowSchematicRenderer(animate=False, scale=8.0).render(tl, title="t")
+    i = impact_frame_index(tl)
+    assert art.hero_png == render_frame(tl, i, title="t", scale=8.0)
+    assert all(f == render_frame(tl, n, title="t", scale=8.0)
+               for n, f in enumerate(art.frames_png))
+    assert art.static_svg == build_static_svg(tl, title="t", scale=8.0)
 
 
 # ── seed road legibility: the road has to constrain where a vehicle can be ───
@@ -305,21 +347,27 @@ def test_seed_style_is_opt_in_and_never_reaches_a_sealed_artifact():
     """``seed_style`` defaults off, and the sealed artifacts never ask for it.
 
     ``hero_png``, the animation frames and the SVG are what a case seals and
-    re-verifies against. A change made for the generative layer's benefit
-    must not move a single byte of them.
+    re-verifies against. The seed's PALETTE is drawn for a generative model
+    to read, and it must never bleed into any of them. (Framing is a separate
+    axis and both are now framed -- see
+    ``test_seed_framing_is_tighter_than_the_schematics_own_framing``.)
     """
+    from claimscene.schematic import schematic_scale_for
+
     tl = _t_junction_timeline()
     i = impact_frame_index(tl)
+    view = schematic_scale_for(tl)
     assert render_frame(tl, i, title="t") == render_frame(tl, i, title="t",
                                                           seed_style=False)
     assert render_frame(tl, i, annotate=False) != render_frame(
         tl, i, annotate=False, seed_style=True)
 
     art = PillowSchematicRenderer(animate=False).render(tl, title="t")
-    assert art.hero_png == render_frame(tl, i, title="t", scale=8.0)
-    assert all(f == render_frame(tl, n, title="t", scale=8.0)
+    # Blueprint palette, at the schematic's own framing, on every sealed byte.
+    assert art.hero_png == render_frame(tl, i, title="t", scale=view)
+    assert all(f == render_frame(tl, n, title="t", scale=view)
                for n, f in enumerate(art.frames_png))
-    assert art.static_svg == build_static_svg(tl, title="t", scale=8.0)
+    assert art.static_svg == build_static_svg(tl, title="t", scale=view)
     # The seed, and only the seed, is the styled one.
     assert art.seed_png == render_frame(tl, i, scale=art.seed_scale,
                                         annotate=False, seed_style=True)
