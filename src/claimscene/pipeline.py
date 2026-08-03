@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from .camera import SEED_SCALE as CAMERA_SEED_SCALE, apply_camera_push
+from .camera import SEED_SCALE as CAMERA_SEED_SCALE
+from .camera import apply_camera_push
 from .case import CaseSpec, ReviewClassification
 from .evaluation import diff_scenes, review_counts
 from .keys import KeyStrategy, make_key
