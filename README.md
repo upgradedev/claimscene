@@ -399,7 +399,7 @@ desynced or over-length video fails the build.
   SDK-boundary contract tests, and the **full API chain** through FastAPI's
   TestClient (extract → preview → render → get → verify → playback, honest
   degrade, path sanitisation, 422s).
-- **296 frontend tests** (Vitest): the review-panel edit logic, the
+- **295 frontend tests** (Vitest, 31 files): the review-panel edit logic, the
   schematic-preview live-update wiring, the ReviewStep centrepiece render, the
   **ExtractProgress** extract-latency UI, the playback-url selection, and the
   in-browser verify pinned to a **golden manifest produced by the real backend**
@@ -408,10 +408,13 @@ desynced or over-length video fails the build.
   a Python job (ruff, pytest, pip-audit, **readiness gate GATING at `--min
   95`** with a *Web Application* criterion driving the API via TestClient),
   a **frontend job** (typecheck → Vitest → production build), and a
-  **real-browser end-to-end job** (Playwright/Chromium) that drives the built
-  client through the whole source → review → render → sealed-case journey and
-  gates accessibility (zero serious/critical axe violations) and responsive
-  layout at 375/768/1280.
+  **real-browser end-to-end job** (19 Playwright/Chromium specs) that drives
+  the built client through the whole source → review → render → sealed-case
+  journey and gates accessibility (zero serious/critical axe violations),
+  responsive layout at 375/768/1280, and **plain language** — the consumer path
+  fails the build if it leaks developer vocabulary at someone who has just had
+  a crash (the sealed provenance ledger is exempt on purpose, since there the
+  wording is evidence).
 - ffmpeg tests skip cleanly when ffmpeg is absent (the schematic playback route
   then serves the real hero PNG instead of MP4); `@pytest.mark.live` smokes run
   only when `GMI_API_KEY` is present (never in CI).

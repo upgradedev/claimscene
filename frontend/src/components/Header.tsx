@@ -3,14 +3,6 @@ import { Badge } from "./ui/badge";
 import { AuthMenu } from "./AuthMenu";
 import { useHealth } from "@/lib/queries";
 
-/** Plain-English tooltip for the health badge. */
-export function modeTooltip(mode: string): string {
-  if (mode === "live") return "Backend: live = real B2 storage + VLM + Genblaze wired";
-  if (mode === "offline")
-    return "Backend: offline = running on the built-in deterministic backends (no cloud credentials needed)";
-  return `Backend mode "${mode}"`;
-}
-
 /** `onOpenLibrary` is only ever invoked from AuthMenu's signed-in "My cases"
  *  item, which itself renders nothing when Firebase config is absent (see
  *  lib/auth.ts::isAuthEnabled) — a build with no VITE_FIREBASE_* vars (every
@@ -31,15 +23,13 @@ export function Header({ onOpenLibrary }: { onOpenLibrary?: () => void }) {
           <Wordmark />
         </a>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {health.isSuccess && (
-            <Badge variant="verified" title={modeTooltip(health.data.mode)}>
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping-soft rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-400" />
-              </span>
-              API · {health.data.mode}
-            </Badge>
-          )}
+          {/* Deliberately no "backend healthy" badge: that's an internal ops
+              signal, not something a driver or a claims adjuster needs to see,
+              and the old tooltip leaked developer vocabulary ("VLM", "B2
+              storage") at people reading it after a crash. The health check
+              itself (useHealth() above) still runs; only the success-path
+              badge is gone. An unreachable backend is still worth surfacing
+              below, since it explains why rendering might not work. */}
           {health.isError && (
             <Badge variant="muted" title="Backend unreachable">
               API offline
