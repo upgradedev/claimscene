@@ -152,8 +152,14 @@ def test_live_failure_returns_a_plain_kind_and_hides_the_upstream_text(monkeypat
     assert body["degrade_kind"] == "credit"
     # Nothing from the upstream error reaches the caller: no account id, no
     # provider URL, no raw message.
+    #
+    # The status code is searched for AS IT APPEARS in the upstream message,
+    # "(402)", not as the bare digits. A sealed response is mostly SHA-256
+    # hex, and a bare "402" turns up inside a digest roughly one run in seven
+    # — a red CI that says nothing leaked and nothing changed. Parentheses
+    # cannot occur in hex, so this needle only fires on a real leak.
     raw = json.dumps(body)
-    for secret in ("Insufficient credits", "acct_1234", "gmicloud.example", "402"):
+    for secret in ("Insufficient credits", "acct_1234", "gmicloud.example", "(402)"):
         assert secret not in raw
 
 
