@@ -1,7 +1,7 @@
 {
   "schema": "claimscene/demo-beats/v1",
   "title": "ClaimScene — narrated demo walkthrough",
-  "description": "Per-beat, audio-locked script. build_video.py synthesizes each narration line (ElevenLabs), locks the beat's visual duration to the measured audio, and renders a gentle Ken Burns move across the committed cards in demo/assets/: real captured screenshots of the running app plus three generated cards (01-thumbnail, 06-accuracy, 07-architecture). check_video.py re-verifies the rendered mp4 against this file. A screenshot goes stale the moment the screen changes, so each refresh records what was reshot and from which commit. On 2026-08-03 the walkthrough moved off the s01 rear-end sample: its illustration read as three vehicles at impossible angles next to a two-vehicle schematic, so at the emotional peak the generative layer visibly contradicted the factual one, and a rear-end on a straight road is a weak scene anyway. The whole case chain (08 picker, 09 review, 10 render, 11 result, 12 provenance, 13 verify) was recaptured that day as a guest, at 1920x1080, from the live Cloud Run deployment running commit 307ba8b, driving the s05 T-intersection sample end to end: case s05_t_intersection-3244ce14. The review step corrects four fields to the scene eval/scenarios/manifest.json states (the red truck pulled out of the south arm turning right; the white car came along the main road from the west at moderate speed), which is what a reviewer who was there would do and what the sealed review ledger records. The illustration is a genuine live Genblaze render, chosen by generating repeatedly across scenarios and looking at the output rather than by retouching one: ten live renders were inspected across three scenarios, and this one is coherent (exactly two vehicles, the right kinds and colours, meeting at the signed T-junction). Others in the same set were not, which is the behaviour the manifest's authorship note already states. In the 11 card both players are advanced, the schematic to its rest frame and the clip to 2.0s, the same thing pressing play and pausing would show; Chrome's own media-control bar is suppressed with CSS so browser furniture does not sit over the picture. Nothing inside either panel is edited. Two beats were added the same day to cover the two thinnest judging criteria, 06b-storage (Backblaze B2) and 10b-shipped (production readiness), paid for by cutting 06-reveal and 08-authorship, which had been making nearly the same claim twice. 06b-storage and 08-authorship share the 12-provenance screenshot and pan to different parts of it. The 07-architecture card is generated, not a screenshot, so its stat row and its adapter lines have to be re-checked against the code whenever the test counts or the live wiring change.",
+  "description": "Per-beat, audio-locked script. build_video.py synthesizes each narration line (ElevenLabs), locks the beat's visual duration to the measured audio, and renders a gentle Ken Burns move across the committed cards in demo/assets/: real captured screenshots of the running app plus three generated cards (01-thumbnail, 06-accuracy, 07-architecture). check_video.py re-verifies the rendered mp4 against this file. A screenshot goes stale the moment the screen changes, so each refresh records what was reshot and from which commit. On 2026-08-03 the walkthrough moved off the s01 rear-end sample: its illustration read as three vehicles at impossible angles next to a two-vehicle schematic, so at the emotional peak the generative layer visibly contradicted the factual one, and a rear-end on a straight road is a weak scene anyway. The whole case chain (08 picker, 09 review, 11 result, 12 provenance, 13 verify) was recaptured that day as a guest, at 1920x1080, from the live Cloud Run deployment running commit 307ba8b, driving the s05 T-intersection sample end to end: case s05_t_intersection-3244ce14. The review step corrects four fields to the scene eval/scenarios/manifest.json states (the red truck pulled out of the south arm turning right; the white car came along the main road from the west at moderate speed), which is what a reviewer who was there would do and what the sealed review ledger records. The illustration is a genuine live Genblaze render, chosen by generating repeatedly across scenarios and looking at the output rather than by retouching one: ten live renders were inspected across three scenarios, and this one is coherent (exactly two vehicles, the right kinds and colours, meeting at the signed T-junction). Others in the same set were not, which is the behaviour the manifest's authorship note already states. In the 11 card both players are advanced, the schematic to its rest frame and the clip to 2.0s, the same thing pressing play and pausing would show; Chrome's own media-control bar is suppressed with CSS so browser furniture does not sit over the picture. Nothing inside either panel is edited. Two beats were added the same day to cover the two thinnest judging criteria, 06b-storage (Backblaze B2) and 10b-shipped (production readiness), paid for by cutting 06-reveal and 08-authorship, which had been making nearly the same claim twice. 06b-storage and 08-authorship share the 12-provenance screenshot and pan to different parts of it. The 07-architecture card is generated, not a screenshot, so its stat row and its adapter lines have to be re-checked against the code whenever the test counts or the live wiring change. Later on 2026-08-03 the walkthrough was reshot again, against commit ba00f8e, because four shipped things were missing from it. Three new cards were captured as a guest from that live deployment, at a 1920x1080 viewport with deviceScaleFactor 2 (the files are therefore 3840x2160, so the tighter crops stay sharp): 14-guided-tour is the hero with the opt-in tour open at step 1 of 6; 15-measured-wait is the review step's right column, showing the render estimate the server measured (about 2 minutes, from the last 1 case rendered here) above the confirm button; 16-case-link is case s05_t_intersection-3244ce14 REOPENED from its own #case/ link, which is why that card can honestly show the link card and the full shareable address. No new render was commissioned for this pass: the guided tour needs no case, the estimate needs only an extraction, and the sealed-case card is the existing case fetched back through the resume path, so the reshoot cost one vision call and no generative credit. Two beats were added (03a-tour, 09b-link) and 05-render moved off the async-progress screen onto the measured-wait card; every other line was tightened to pay for them, because the cap is 180s and the previous cut already spent 176.2s. The fifth change of that day, a live provider failure now reading in plain language, is narrated in 06-reveal but deliberately NOT shown: a real failure cannot be induced against the live app on demand, and a mocked screenshot would break this file's own rule that every card is the running product. The favicon shipped the same day and is not in the video at all, because a page capture cannot show browser furniture and drawing a fake tab strip would be the same lie.",
   "voice": { "provider": "elevenlabs", "voice_name": "Brian", "voice_id": "nPczCjzI2devNBz1zQrb", "model_id": "eleven_multilingual_v2" },
   "render": { "fps": 30, "width": 1920, "height": 1080, "tail_seconds": 0.35 },
   "sections": {
@@ -22,7 +22,7 @@
       "focus_start": [0.0, 0.0, 1.0, 1.0],
       "focus_end": [0.02, 0.04, 0.9, 0.9],
       "caption": "Honest accident documentation. Illustrated, never faked.",
-      "narration": "After a crash, the first real job is documentation. Which cars, which damage, which road, and what actually happened. ClaimScene turns accident photos into a case a claims handler can trust. Honest, illustrated, and never faked."
+      "narration": "After a crash, the first job is documentation. Which cars, which damage, which road, and what happened. ClaimScene turns accident photos into a case a claims handler can trust. Illustrated, and never faked."
     },
     {
       "id": "02-problem",
@@ -32,7 +32,17 @@
       "focus_start": [0.4, 0.16, 0.58, 0.49],
       "focus_end": [0.585, 0.4, 0.4, 0.338],
       "caption": "A convincing AI guess is dangerous as evidence.",
-      "narration": "That matters now, because generative video made accident scenes easy to fake and hard to trust. A convincing AI reconstruction that is really just a guess is dangerous as evidence. Insurers and courts are already warning about synthetic media in claims."
+      "narration": "Generative video made accident scenes easy to fake and hard to trust. A convincing AI reconstruction that is really just a guess is dangerous as evidence."
+    },
+    {
+      "id": "03a-tour",
+      "section": 3,
+      "kicker": "SIXTY SECONDS, IF THAT IS ALL YOU HAVE",
+      "card": "claimscene-14-guided-tour.png",
+      "focus_start": [0.24, 0.36, 0.54, 0.54],
+      "focus_end": [0.3275, 0.66, 0.34, 0.34],
+      "caption": "Six steps, opt in. It never opens itself, and Escape leaves.",
+      "narration": "So the app explains itself first. Six short steps, opt in from the hero, make the whole argument: what the drawing is, what the AI picture is not, and what sealed does not mean."
     },
     {
       "id": "03-photos",
@@ -42,7 +52,7 @@
       "focus_start": [0.0, 0.0, 1.0, 1.0],
       "focus_end": [0.38, 0.495, 0.3, 0.325],
       "caption": "Photos in. A closed vocabulary out, never coordinates.",
-      "narration": "Every case starts with photos, yours or a sample scenario like this one. A vision model reads them into a closed vocabulary only: vehicle kind, colour, approach, and a twelve position clock for damage and impact, never a free coordinate."
+      "narration": "Every case starts with photos, yours or a sample scenario. A vision model reads them into a closed vocabulary only: vehicle kind, colour, approach, and a twelve position clock for damage and impact."
     },
     {
       "id": "04-review",
@@ -52,17 +62,17 @@
       "focus_start": [0.0, 0.0, 1.0, 1.0],
       "focus_end": [0.235, 0.11, 0.53, 0.49],
       "caption": "Correct anything. Confirming a field is not the same as verifying it.",
-      "narration": "The proposed scene is yours to correct. Drag a vehicle between the four approaches, or drag its handle around the twelve clock positions, and the schematic redraws live. And the app is blunt: confirming a field is not the same as verifying it."
+      "narration": "The proposed scene is yours to correct. Drag a vehicle between the four approaches, or its handle around the twelve clock positions, and the schematic redraws live. Confirming is not verifying."
     },
     {
       "id": "05-render",
       "section": 4,
-      "kicker": "SUBMIT AND POLL",
-      "card": "claimscene-10-async-render.png",
-      "focus_start": [0.0, 0.0, 1.0, 1.0],
-      "focus_end": [0.27, 0.15, 0.42, 0.42],
-      "caption": "One click. The app submits a render job and polls.",
-      "narration": "Confirm, and rendering runs as a background job the app submits and polls, since a real illustration render can take minutes. First the deterministic schematic, then the disclosed AI clip, then the sealed manifest."
+      "kicker": "A MEASURED WAIT, THEN A BACKGROUND JOB",
+      "card": "claimscene-15-measured-wait.png",
+      "focus_start": [0.5, 0.28, 0.34, 0.34],
+      "focus_end": [0.5397, 0.764, 0.22, 0.22],
+      "caption": "The wait is measured, and it says how many cases it counted.",
+      "narration": "Before you commit to waiting, the app says how long, and how many real renders that came from. One click then submits a background job it polls, because a live render takes minutes."
     },
     {
       "id": "06-reveal",
@@ -72,7 +82,7 @@
       "focus_start": [0.22, 0.15, 0.57, 0.6],
       "focus_end": [0.235, 0.325, 0.53, 0.42],
       "caption": "The schematic carries the facts. The clip carries style only.",
-      "narration": "Both layers sit sealed, side by side. The schematic on the left is the reconstruction, drawn by code. The clip on the right carries visual style only, never the facts."
+      "narration": "Both layers sit sealed, side by side. The schematic on the left is the reconstruction, drawn by code. The clip on the right carries visual style only, never the facts. And when the AI picture fails, the app says so plainly."
     },
     {
       "id": "07-architecture",
@@ -81,8 +91,8 @@
       "card": "claimscene-07-architecture.png",
       "focus_start": [0.0, 0.0, 1.0, 1.0],
       "focus_end": [0.028, 0.3125, 0.58, 0.58],
-      "caption": "Ports and adapters. Live VLM, deterministic renderer, real Backblaze B2, Genblaze from our own raster.",
-      "narration": "Underneath, it is ports and adapters. A vision ladder reads the photos, code draws the schematic to the same bytes every run, Backblaze B2 holds the evidence, and Genblaze animates our own schematic raster, never a generated still."
+      "caption": "Live VLM, deterministic renderer, real Backblaze B2, Genblaze from our own raster, never a generated still.",
+      "narration": "Underneath, it is ports and adapters. A vision ladder reads the photos, code draws the schematic to the same bytes every run, Backblaze B2 holds the evidence, and Genblaze animates our own raster."
     },
     {
       "id": "06b-storage",
@@ -92,7 +102,7 @@
       "focus_start": [0.25, 0.375, 0.5, 0.19],
       "focus_end": [0.23, 0.32, 0.55, 0.68],
       "caption": "Backblaze B2, content addressed. Provenance of the inputs, not just the outputs.",
-      "narration": "Storage is Backblaze B2, and it is content addressed. Every input photo, every artifact and the manifest lands under a key that is its own hash, and the seal records where each photo came from and under what license."
+      "narration": "Storage is Backblaze B2, content addressed. Every input photo, every artifact and the manifest lands under a key that is its own hash, and the seal records where each photo came from."
     },
     {
       "id": "08-authorship",
@@ -102,7 +112,7 @@
       "focus_start": [0.24, 0.3, 0.53, 0.6],
       "focus_end": [0.25, 0.535, 0.49, 0.2],
       "caption": "The model supplies style. Everything provable is computed.",
-      "narration": "The sealed manifest states that split in plain language. Repeated live renders proved the model does not reliably keep the layout it is seeded with, so nothing provable is left to it."
+      "narration": "The sealed manifest states that split in plain language: the model supplies style, and nothing provable is left to it."
     },
     {
       "id": "09-verify",
@@ -115,6 +125,16 @@
       "narration": "Press Verify, and the SHA-256 seal recomputes right in your browser. Behind it sits a receipt of eighteen named checks, each re-run from the stored bytes on the server."
     },
     {
+      "id": "09b-link",
+      "section": 5,
+      "kicker": "THE CASE SURVIVES THE TAB",
+      "card": "claimscene-16-case-link.png",
+      "focus_start": [0.2, 0.06, 0.6, 0.6],
+      "focus_end": [0.245, 0.392, 0.42, 0.42],
+      "caption": "This case was reopened from that link, sealed files and all.",
+      "narration": "And the case id lives in the address bar, so a refresh or a lost tab no longer loses the case. A sealed case is a link that still opens next week."
+    },
+    {
       "id": "10-measured",
       "section": 6,
       "kicker": "MEASURED, NOT VIBES",
@@ -122,7 +142,7 @@
       "focus_start": [0.0, 0.0, 1.0, 1.0],
       "focus_end": [0.03, 0.26, 0.4, 0.52],
       "caption": "100% weighted field accuracy, on the record.",
-      "narration": "And the accuracy is measured, not asserted. The primary model scores one hundred percent weighted field accuracy on a committed seven scenario evaluation set, with a dated scoreboard living in the repo."
+      "narration": "The accuracy is measured, not asserted: one hundred percent weighted field accuracy on a committed seven scenario evaluation set, with a dated scoreboard in the repo."
     },
     {
       "id": "10b-shipped",
@@ -132,7 +152,7 @@
       "focus_start": [0.02, 0.585, 0.97, 0.415],
       "focus_end": [0.035, 0.655, 0.93, 0.315],
       "caption": "Over 800 tests, a scored readiness gate, and a health endpoint that names its backends.",
-      "narration": "Over eight hundred automated tests, secret scanning and a scored readiness gate run in CI on every change. And the live health endpoint names the exact backends that actually served you."
+      "narration": "Over eight hundred automated tests, secret scanning and a scored readiness gate run in CI on every change. The live health endpoint names the backends that served you."
     },
     {
       "id": "11-close",
@@ -141,8 +161,8 @@
       "card": "claimscene-01-thumbnail.png",
       "focus_start": [0.03, 0.03, 0.94, 0.94],
       "focus_end": [0.01, 0.18, 0.62, 0.38],
-      "caption": "Live on Cloud Run. Open source. Never faked.",
-      "narration": "ClaimScene is live on Cloud Run, built on Genblaze and Backblaze B2, and the whole project is open source. Honest accident documentation. Illustrated, and never faked."
+      "caption": "Live on Cloud Run, mirrored on Firebase Hosting. Open source. Never faked.",
+      "narration": "ClaimScene is live on Cloud Run, built on Genblaze and Backblaze B2, and it is all open source. Honest accident documentation. Illustrated, and never faked."
     }
   ]
 }

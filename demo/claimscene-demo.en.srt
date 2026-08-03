@@ -1,85 +1,93 @@
 1
-00:00:00,000 --> 00:00:15,400
-After a crash, the first real job is documentation. Which cars,
-which damage, which road, and what actually happened. ClaimScene
-turns accident photos into a case a claims handler can trust.
-Honest, illustrated, and never faked.
+00:00:00,000 --> 00:00:13,033
+After a crash, the first job is documentation. Which cars, which
+damage, which road, and what happened. ClaimScene turns accident
+photos into a case a claims handler can trust. Illustrated, and
+never faked.
 
 2
-00:00:15,400 --> 00:00:31,833
-That matters now, because generative video made accident scenes
-easy to fake and hard to trust. A convincing AI reconstruction
-that is really just a guess is dangerous as evidence. Insurers
-and courts are already warning about synthetic media in claims.
+00:00:13,033 --> 00:00:22,767
+Generative video made accident scenes easy to fake and hard to
+trust. A convincing AI reconstruction that is really just a
+guess is dangerous as evidence.
 
 3
-00:00:31,833 --> 00:00:48,300
-Every case starts with photos, yours or a sample scenario like
-this one. A vision model reads them into a closed vocabulary
-only: vehicle kind, colour, approach, and a twelve position
-clock for damage and impact, never a free coordinate.
+00:00:22,767 --> 00:00:35,100
+So the app explains itself first. Six short steps, opt in from
+the hero, make the whole argument: what the drawing is, what the
+AI picture is not, and what sealed does not mean.
 
 4
-00:00:48,300 --> 00:01:03,700
-The proposed scene is yours to correct. Drag a vehicle between
-the four approaches, or drag its handle around the twelve clock
-positions, and the schematic redraws live. And the app is blunt:
-confirming a field is not the same as verifying it.
+00:00:35,100 --> 00:00:49,200
+Every case starts with photos, yours or a sample scenario. A
+vision model reads them into a closed vocabulary only: vehicle
+kind, colour, approach, and a twelve position clock for damage
+and impact.
 
 5
-00:01:03,700 --> 00:01:17,133
-Confirm, and rendering runs as a background job the app submits
-and polls, since a real illustration render can take minutes.
-First the deterministic schematic, then the disclosed AI clip,
-then the sealed manifest.
+00:00:49,200 --> 00:01:01,533
+The proposed scene is yours to correct. Drag a vehicle between
+the four approaches, or its handle around the twelve clock
+positions, and the schematic redraws live. Confirming is not
+verifying.
 
 6
-00:01:17,133 --> 00:01:28,200
-Both layers sit sealed, side by side. The schematic on the left
-is the reconstruction, drawn by code. The clip on the right
-carries visual style only, never the facts.
+00:01:01,533 --> 00:01:13,300
+Before you commit to waiting, the app says how long, and how
+many real renders that came from. One click then submits a
+background job it polls, because a live render takes minutes.
 
 7
-00:01:28,200 --> 00:01:44,667
+00:01:13,300 --> 00:01:27,900
+Both layers sit sealed, side by side. The schematic on the left
+is the reconstruction, drawn by code. The clip on the right
+carries visual style only, never the facts. And when the AI
+picture fails, the app says so plainly.
+
+8
+00:01:27,900 --> 00:01:40,733
 Underneath, it is ports and adapters. A vision ladder reads the
 photos, code draws the schematic to the same bytes every run,
 Backblaze B2 holds the evidence, and Genblaze animates our own
-schematic raster, never a generated still.
-
-8
-00:01:44,667 --> 00:01:58,700
-Storage is Backblaze B2, and it is content addressed. Every
-input photo, every artifact and the manifest lands under a key
-that is its own hash, and the seal records where each photo came
-from and under what license.
+raster.
 
 9
-00:01:58,700 --> 00:02:09,533
-The sealed manifest states that split in plain language.
-Repeated live renders proved the model does not reliably keep
-the layout it is seeded with, so nothing provable is left to it.
+00:01:40,733 --> 00:01:52,467
+Storage is Backblaze B2, content addressed. Every input photo,
+every artifact and the manifest lands under a key that is its
+own hash, and the seal records where each photo came from.
 
 10
-00:02:09,533 --> 00:02:20,067
+00:01:52,467 --> 00:02:00,000
+The sealed manifest states that split in plain language: the
+model supplies style, and nothing provable is left to it.
+
+11
+00:02:00,000 --> 00:02:10,533
 Press Verify, and the SHA-256 seal recomputes right in your
 browser. Behind it sits a receipt of eighteen named checks, each
 re-run from the stored bytes on the server.
 
-11
-00:02:20,067 --> 00:02:32,600
-And the accuracy is measured, not asserted. The primary model
-scores one hundred percent weighted field accuracy on a
-committed seven scenario evaluation set, with a dated scoreboard
-living in the repo.
-
 12
-00:02:32,600 --> 00:02:43,900
-Over eight hundred automated tests, secret scanning and a scored
-readiness gate run in CI on every change. And the live health
-endpoint names the exact backends that actually served you.
+00:02:10,533 --> 00:02:20,967
+And the case id lives in the address bar, so a refresh or a lost
+tab no longer loses the case. A sealed case is a link that still
+opens next week.
 
 13
-00:02:43,900 --> 00:02:56,200
+00:02:20,967 --> 00:02:31,433
+The accuracy is measured, not asserted: one hundred percent
+weighted field accuracy on a committed seven scenario evaluation
+set, with a dated scoreboard in the repo.
+
+14
+00:02:31,433 --> 00:02:41,167
+Over eight hundred automated tests, secret scanning and a scored
+readiness gate run in CI on every change. The live health
+endpoint names the backends that served you.
+
+15
+00:02:41,167 --> 00:02:52,600
 ClaimScene is live on Cloud Run, built on Genblaze and Backblaze
-B2, and the whole project is open source. Honest accident
-documentation. Illustrated, and never faked.
+B2, and it is all open source. Honest accident documentation.
+Illustrated, and never faked.
