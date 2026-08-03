@@ -44,6 +44,11 @@ Spec JSON shape (see demo/assets/src/*.patch.json for real examples):
   ]
 }
 
+``fill_color`` and ``text_color`` may also be set on an individual patch,
+overriding the spec-level pair for that patch only. A card is not always one
+palette: the architecture card's amber stat row and its grey adapter text sit
+on different box fills, so patching both in one pass needs per-patch colours.
+
 Each patch's ``erase_box`` and ink anchors were measured once, directly from
 the shipped PNG's pixels (amber-glyph bounding boxes), not eyeballed -- see
 the PR description for the measurement method. Re-derive them the same way
@@ -117,6 +122,12 @@ def apply_patch_spec(spec: dict, spec_path: str) -> str:
     draw = ImageDraw.Draw(img)
 
     for patch in spec["patches"]:
+        # Per-patch colour overrides. A card is not always one palette: the
+        # architecture card's amber stat row and its grey adapter text sit on
+        # different box fills, so a single spec-level pair cannot patch both.
+        # Defaults keep every existing spec byte-identical in behaviour.
+        p_fill = tuple(patch.get("fill_color", fill_color))
+        p_text = tuple(patch.get("text_color", text_color))
         target_h = patch["ink_bottom_y"] - patch["ink_top_y"]
         size = find_font_size(draw, patch["new_text"], font_path, target_h)
         font = ImageFont.truetype(font_path, size)
@@ -133,7 +144,10 @@ def apply_patch_spec(spec: dict, spec_path: str) -> str:
         # script on an already-patched image a visible (if subtle) second
         # blend rather than a true no-op -- this union keeps the operation
         # idempotent regardless of how tightly erase_box was measured.
-        pad = 4
+        # The default 4px bleed is right for an isolated stat, but a line of
+        # body text can sit only 3px below its own box title. Overridable per
+        # patch so the erase cannot eat a neighbouring row's glyph bottoms.
+        pad = patch.get("pad", 4)
         text_box = (draw_x + bbox[0] - pad, draw_y + bbox[1] - pad,
                     draw_x + bbox[2] + pad, draw_y + bbox[3] + pad)
         erase_box = patch["erase_box"]
@@ -141,8 +155,8 @@ def apply_patch_spec(spec: dict, spec_path: str) -> str:
             min(erase_box[0], text_box[0]), min(erase_box[1], text_box[1]),
             max(erase_box[2], text_box[2]), max(erase_box[3], text_box[3]),
         )
-        draw.rectangle(full_erase, fill=fill_color)
-        draw.text((draw_x, draw_y), patch["new_text"], font=font, fill=text_color)
+        draw.rectangle(full_erase, fill=p_fill)
+        draw.text((draw_x, draw_y), patch["new_text"], font=font, fill=p_text)
         print(f"  [{os.path.basename(spec_path)}] drew {patch['new_text']!r} "
               f"at ({draw_x},{draw_y}) font_size={size} erased={full_erase}")
 

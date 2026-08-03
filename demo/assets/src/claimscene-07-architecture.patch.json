@@ -1,5 +1,5 @@
 {
-  "_comment": "Regenerates demo/assets/claimscene-07-architecture.png by patching only the two stale stat numbers in place. Source of truth for the numbers: the latest green CI run's pytest/vitest summary lines (see README.md '290 offline backend tests' / '208 frontend tests'). Run via: python scripts/patch_gallery_card.py demo/assets/src/claimscene-07-architecture.patch.json -- or push a change to this file and let .github/workflows/render-cards.yml do it.",
+  "_comment": "Regenerates demo/assets/claimscene-07-architecture.png. Patches the two stale stat numbers AND the GenblazeMediaProvider line, which described a pipeline stage that no longer runs (issue #32). Numbers come from the latest green CI run on main (README.md:393 backend, README.md:402 frontend); the adapter line comes from src/claimscene/pipeline.py, where still_model is None and still_source is 'schematic:impact_frame'. Run via: python scripts/patch_gallery_card.py demo/assets/src/claimscene-07-architecture.patch.json -- or push a change to this file and let .github/workflows/render-cards.yml do it.",
   "base_image": "demo/assets/claimscene-07-architecture.png",
   "output_image": "demo/assets/claimscene-07-architecture.png",
   "font": "DejaVuSansMono-Bold",
@@ -7,20 +7,31 @@
   "text_color": [232, 163, 61],
   "patches": [
     {
-      "note": "backend test count: 289 -> 290 (pytest summary, README.md:191)",
+      "note": "backend test count: 290 -> 521 (pytest summary, README.md:393)",
       "erase_box": [85, 568, 148, 596],
-      "new_text": "290",
+      "new_text": "521",
       "anchor_left_x": 92,
       "ink_top_y": 574,
       "ink_bottom_y": 593
     },
     {
-      "note": "frontend test count: 126 -> 208 (vitest summary, README.md:365)",
+      "note": "frontend test count: 208 -> 295 (vitest summary, README.md:402)",
       "erase_box": [192, 568, 254, 596],
-      "new_text": "208",
+      "new_text": "295",
       "anchor_left_x": 200,
       "ink_top_y": 574,
       "ink_bottom_y": 593
+    },
+    {
+      "note": "GenblazeMediaProvider line 1: 'seedream-5.0-lite still' claimed a model call that no longer happens. The still is a raster of the deterministic schematic (pipeline.py: still_model=None, still_source='schematic:impact_frame'). Line 2 ('pixverse-v6-i2v clip - GMI') is still accurate and is deliberately left alone. Geometry measured from the shipped PNG's own pixels: ink spans x 331..479, y 391..398 (25 chars at 5.94 px/char), grey (138,153,160) on the box fill (14,22,25) -- hence the palette override. Three neighbours constrain the erase and are why pad drops to 2: the box title's glyph bottoms end at y=387, line 2 starts at y=406, and the box's right border is a single column at x=716.",
+      "erase_box": [329, 389, 500, 403],
+      "new_text": "schematic raster still →",
+      "anchor_left_x": 331,
+      "ink_top_y": 391,
+      "ink_bottom_y": 398,
+      "pad": 2,
+      "fill_color": [14, 22, 25],
+      "text_color": [138, 153, 160]
     }
   ]
 }
