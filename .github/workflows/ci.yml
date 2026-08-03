@@ -158,8 +158,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install
         run: npm ci
+      # `--with-deps` shells out to apt, which refreshes every repository the
+      # hosted image carries. packages.microsoft.com answering 403 today took
+      # the video gate down with it and left this step sitting for seven
+      # minutes; the browser's own Ubuntu dependencies are all this needs.
       - name: Install Playwright browser (chromium)
-        run: npx playwright install --with-deps chromium
+        run: |
+          set -euo pipefail
+          sudo rm -f /etc/apt/sources.list.d/microsoft*.list                      /etc/apt/sources.list.d/microsoft*.sources                      /etc/apt/sources.list.d/azure-cli*
+          npx playwright install --with-deps chromium
       - name: Journey + a11y + responsive (Playwright, Chromium)
         run: npx playwright test --project=chromium
       - name: Upload Playwright report
