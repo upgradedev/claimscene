@@ -60,11 +60,18 @@ export default function App() {
         return;
       }
       setRoute(next);
-      if (next.kind === "start") setStarted(true);
+      if (next.kind === "start") {
+        // #start means start. Arriving here with a case still open (someone
+        // edited the address bar, or followed a #start link in a tab that
+        // already had one) must give them the beginning of a new case, not
+        // the last one they looked at.
+        if (useCaseStore.getState().result) reset();
+        setStarted(true);
+      }
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+  }, [reset]);
 
   // Deep-link on first load: /#start jumps straight into the studio.
   useEffect(() => {

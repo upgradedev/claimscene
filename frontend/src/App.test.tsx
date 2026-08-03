@@ -103,4 +103,24 @@ describe("App shell", () => {
     await waitFor(() => expect(window.location.hash).toBe("#case/sealed-9"));
     expect(screen.getByRole("heading", { name: /Case sealed/i })).toBeInTheDocument();
   });
+
+  it("#start starts a new case, even with one already open", async () => {
+    const sealed = {
+      case_id: "sealed-9", manifest_hash: "b".repeat(64), manifest_url: "/cases/sealed-9",
+      provider: "fake-media", degraded: true, provider_degraded: false,
+      has_schematic_animation: false, schematic_kind: "static" as const,
+      schematic_url: "/cases/sealed-9/schematic",
+      illustration_url: "/cases/sealed-9/illustration",
+      report_markdown: "# report", scene: emptyScene(), warnings: [], artifacts: {},
+    };
+    vi.spyOn(claimsceneApi, "caseResult").mockResolvedValue(sealed);
+    window.location.hash = "#case/sealed-9";
+    renderApp();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /Case sealed/i })).toBeInTheDocument());
+
+    window.location.hash = "#start";
+    await waitFor(() => expect(screen.getByText(/Step 1 of 4/i)).toBeInTheDocument());
+    expect(useCaseStore.getState().result).toBeNull();
+  });
 });

@@ -75,13 +75,18 @@ function RenderTimeNote() {
   const { data } = useRenderEstimate();
   const typical = approxDuration(data?.typical_seconds ?? null);
   const slow = approxDuration(data?.slow_seconds ?? null);
+  // With one sample, or a batch that all landed in the same bracket, the slow
+  // end rounds to the same words as the typical one. "about 2 minutes, and up
+  // to about 2 minutes at the slow end" is noise pretending to be a range, so
+  // the range only appears when there is a real spread to report.
+  const spread = slow !== null && slow !== typical ? slow : null;
   if (!data) return null;
   return (
     <p className="flex items-start gap-2 rounded border border-steel-700 bg-steel-950/60 px-3 py-2 text-xs leading-relaxed text-blueprint-dim">
       <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-400" aria-hidden />
       {data.samples > 0 && typical ? (
         <span>
-          Rendering takes {typical} here, {slow ? `and up to ${slow} ` : ""}at the slow end.
+          Rendering takes {typical} here{spread ? `, and up to ${spread} at the slow end` : ""}.
           That comes from the last {data.samples} {data.samples === 1 ? "case" : "cases"}{" "}
           rendered here. You can leave the page while it runs and come back to it.
         </span>
