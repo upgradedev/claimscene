@@ -1,9 +1,19 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import { ReviewStep } from "./ReviewStep";
 import { claimsceneApi } from "@/lib/api";
 import { useCaseStore } from "@/store/useCaseStore";
 import { addDamage, addVehicle, emptyScene, setImpact, type Scene } from "@/lib/scene";
+
+/** The step now asks the server how long a render takes here (the measured
+ *  estimate beside the render CTA), so it needs a query client like every
+ *  other data-touching component's test. */
+function render(ui: ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 function seededScene(): Scene {
   let scene = addVehicle(emptyScene()); // veh_a + veh_b

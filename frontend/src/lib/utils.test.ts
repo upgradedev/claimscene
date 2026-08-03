@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  approxDuration,
+  elapsedLabel,
   formatBytes,
   ghostSvg,
   illustrationIsPlayable,
@@ -71,5 +73,41 @@ describe("formatBytes / shortHash", () => {
     expect(shortHash(null)).toBe("—");
     expect(shortHash("abcd")).toBe("abcd");
     expect(shortHash("0123456789abcdef0123456789abcdef")).toBe("01234567…89abcdef");
+  });
+});
+
+describe("approxDuration (how long a render takes, said honestly)", () => {
+  it("rounds to whole minutes above a minute and a half", () => {
+    expect(approxDuration(240)).toBe("about 4 minutes");
+    expect(approxDuration(255)).toBe("about 4 minutes");
+    expect(approxDuration(100)).toBe("about 2 minutes");
+    // Under 90s it stays in seconds rather than rounding "1 minute" onto a
+    // wait that is nothing like a minute.
+    expect(approxDuration(60)).toBe("about 60 seconds");
+  });
+
+  it("uses coarse seconds for short waits", () => {
+    expect(approxDuration(42)).toBe("about 40 seconds");
+    expect(approxDuration(3)).toBe("about 10 seconds");
+  });
+
+  it("returns null when there is nothing to report, so callers can say so", () => {
+    expect(approxDuration(null)).toBeNull();
+    expect(approxDuration(undefined)).toBeNull();
+    expect(approxDuration(Number.NaN)).toBeNull();
+    expect(approxDuration(-5)).toBeNull();
+  });
+});
+
+describe("elapsedLabel", () => {
+  it("counts up in minutes and seconds", () => {
+    expect(elapsedLabel(0)).toBe("0 s");
+    expect(elapsedLabel(45_000)).toBe("45 s");
+    expect(elapsedLabel(80_000)).toBe("1 min 20 s");
+    expect(elapsedLabel(600_000)).toBe("10 min 0 s");
+  });
+
+  it("never shows a negative wait", () => {
+    expect(elapsedLabel(-1000)).toBe("0 s");
   });
 });

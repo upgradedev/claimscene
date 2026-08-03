@@ -135,6 +135,16 @@ const RENDER_RESPONSE = {
   artifacts: {},
 };
 
+// Measured render durations (GET /cases/render/estimate) — how long a render
+// takes on this deployment, from the last completed ones. Deterministic here
+// so the "about N minutes" copy is stable across runs.
+const RENDER_ESTIMATE = {
+  samples: 6,
+  typical_seconds: 240,
+  slow_seconds: 400,
+  mode: "offline",
+};
+
 // The server-side named-check receipt (GET /cases/{id}/verify): a full 14-check
 // live seal, every check re-run from stored bytes and passing.
 const VERIFY_RECEIPT = {
@@ -213,6 +223,25 @@ export async function installApiMocks(page: Page): Promise<void> {
         created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:05Z",
         result: RENDER_RESPONSE,
       }));
+    }
+
+    // GET /cases/render/estimate — the measured "how long will this take"
+    // answer, shown before the visitor commits and again while they wait.
+    if (method === "GET" && pathname.endsWith("/cases/render/estimate")) {
+      return route.fulfill(json(RENDER_ESTIMATE));
+    }
+
+    // GET /cases/{id}/result — a sealed case rebuilt into the render body, the
+    // route that makes a case survive a lost tab. Only the golden case exists;
+    // every other id 404s exactly as the real server does for an unknown id,
+    // an expired one, or one belonging to another account.
+    if (method === "GET" && pathname.endsWith("/result")) {
+      const caseId = pathname.split("/").slice(-2)[0];
+      if (caseId === GOLDEN_CASE_ID) return route.fulfill(json(RENDER_RESPONSE));
+      return route.fulfill({
+        status: 404, contentType: JSON_CT,
+        body: JSON.stringify({ detail: `no case named '${caseId}'` }),
+      });
     }
 
     if (pathname.endsWith("/cases/render")) {

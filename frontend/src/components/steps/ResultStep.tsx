@@ -1,5 +1,8 @@
-import { AlertTriangle, Download, FileText, Film, Plus, Ruler, ShieldAlert } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, Download, FileText, Film, Link2, Plus, Ruler, ShieldAlert } from "lucide-react";
 import { API_BASE, type RenderResponse } from "@/lib/api";
+import { DEGRADE_CONSEQUENCE, DEGRADE_TITLE, degradeCause } from "@/lib/degrade";
+import { caseLink } from "@/lib/route";
 import { useCaseStore } from "@/store/useCaseStore";
 import { illustrationIsPlayable } from "@/lib/utils";
 import { Badge } from "../ui/badge";
@@ -7,6 +10,52 @@ import { Button } from "../ui/button";
 import { HashChip } from "../HashChip";
 import { Markdown } from "../Markdown";
 import { ProvenancePanel } from "../ProvenancePanel";
+
+/** The link that reopens this exact sealed case.
+ *
+ *  Worth its own card rather than a line in the downloads row: the sealed case
+ *  is what a claimant may want to send to an adjuster next week, and until now
+ *  it existed only in the tab that made it. Copying is a convenience, so a
+ *  browser that refuses clipboard access is told plainly to select the address
+ *  instead, and the link itself is always on screen to be read. */
+function CaseLinkCard({ caseId }: { caseId: string }) {
+  const link = caseLink(caseId);
+  const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied("done");
+    } catch {
+      setCopied("failed");
+    }
+  };
+
+  return (
+    <section className="sheet p-4">
+      <h3 className="label-caps mb-2 flex items-center gap-1.5">
+        <Link2 className="h-3 w-3 text-cyan-400" /> keep this link
+      </h3>
+      <p className="text-sm leading-relaxed text-blueprint-dim">
+        Opening this link later brings this sealed case back, files and all. If you made
+        it while signed in, only that account can open it.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <code className="min-w-0 max-w-full break-all rounded border border-steel-700 bg-steel-950/80 px-2 py-1.5 font-mono text-xs text-cyan-200">
+          {link}
+        </code>
+        <Button size="md" className="h-11" onClick={copy}>
+          {copied === "done" ? "Link copied" : "Copy link"}
+        </Button>
+      </div>
+      {copied === "failed" && (
+        <p role="status" className="mt-2 text-sm text-amber-200">
+          Your browser did not allow copying. Select the address above instead.
+        </p>
+      )}
+    </section>
+  );
+}
 
 export function ResultStep({ result }: { result: RenderResponse }) {
   const reset = useCaseStore((s) => s.reset);
@@ -50,6 +99,20 @@ export function ResultStep({ result }: { result: RenderResponse }) {
           </span>
         </p>
       </div>
+
+      {/* The live picture failed on THIS case. Said plainly, in the same place
+          the sealed manifest records it, with the one fact that actually
+          matters here: the schematic carries the facts and is untouched. */}
+      {result.provider_degraded && (
+        <div className="flex items-start gap-2.5 rounded border border-amber-400/40 bg-[#1c1608] px-4 py-3">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden />
+          <div className="space-y-1.5 text-sm leading-relaxed text-amber-100">
+            <p className="font-semibold">{DEGRADE_TITLE}</p>
+            <p className="text-amber-200/80">{degradeCause(result.degrade_kind)}</p>
+            <p className="text-amber-200/80">{DEGRADE_CONSEQUENCE}</p>
+          </div>
+        </div>
+      )}
 
       {/* Media: factual schematic + disclosed illustration, side by side.
           grid-cols-1 base keeps the single mobile column container-bounded. */}
@@ -117,6 +180,10 @@ export function ResultStep({ result }: { result: RenderResponse }) {
           </div>
         </figure>
       </div>
+
+      {/* The case's own link. A sealed case is the durable thing here, and
+          before this it could only be seen in the tab that made it. */}
+      <CaseLinkCard caseId={result.case_id} />
 
       {/* Downloads */}
       <div className="flex flex-wrap items-center gap-2">

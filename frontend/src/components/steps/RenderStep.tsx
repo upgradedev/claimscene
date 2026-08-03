@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Loader2 } from "lucide-react";
-import { usePollRenderJob, useSubmitRenderJob } from "@/lib/queries";
+import { AlertCircle, Check, Clock, Loader2 } from "lucide-react";
+import { usePollRenderJob, useRenderEstimate, useSubmitRenderJob } from "@/lib/queries";
+import { jobHash, replaceHash } from "@/lib/route";
 import { useCaseStore } from "@/store/useCaseStore";
 import { Button } from "../ui/button";
-import { cn } from "@/lib/utils";
+import { approxDuration, cn, elapsedLabel } from "@/lib/utils";
 
 const STAGES = [
   "Plotting the deterministic schematic (factual layer)",
@@ -30,11 +31,18 @@ export function RenderStep() {
   // attempt so a retry's stale poll result/error never lingers even a beat.
   const [jobId, setJobId] = useState<string | null>(null);
   const poll = usePollRenderJob(jobId);
+  const estimate = useRenderEstimate();
+  // Counted from the moment this attempt was submitted, so the number on
+  // screen is the visitor's own wait, not the app's uptime.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
   const start = useCallback(() => {
     if (!scene) return;
     setPhase(0);
     setJobId(null);
+    setStartedAt(Date.now());
+    setElapsedMs(0);
     // Seal the AI→human approval receipt: send the frozen AI proposal + an honest
     // classification. The public demo is unauthenticated, so `interactive_demo`
     // is the truthful label (the server also enforces this).
@@ -46,7 +54,15 @@ export function RenderStep() {
       scenario
         ? { scene, caseId, scenarioId: scenario.id, ...review }
         : { scene, caseId, files: photos.map((p) => p.file), roles: photos.map((p) => p.role), ...review },
-      { onSuccess: (data) => setJobId(data.job_id) },
+      {
+        onSuccess: (data) => {
+          setJobId(data.job_id);
+          // The render now exists server-side under this id, so the URL says
+          // so. Close the tab here and the case is still reachable: reopening
+          // the link picks the same job back up (see components/ResumedCase).
+          replaceHash(jobHash(data.job_id));
+        },
+      },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, proposedScene, scenario, photos, caseId]);
@@ -74,6 +90,21 @@ export function RenderStep() {
     const t = window.setInterval(() => setPhase((p) => Math.min(p + 1, STAGES.length - 1)), 1400);
     return () => window.clearInterval(t);
   }, [error, isSuccess]);
+
+  // The one number that is genuinely theirs: how long they have been waiting.
+  // Ticks every 5s rather than every second — the estimate beside it is a
+  // rough median, so a per-second counter would imply a precision neither
+  // number has, and it keeps this off the main thread's every-frame path.
+  useEffect(() => {
+    if (startedAt === null || error || isSuccess) return;
+    const t = window.setInterval(() => setElapsedMs(Date.now() - startedAt), 5_000);
+    return () => window.clearInterval(t);
+  }, [startedAt, error, isSuccess]);
+
+  const typical = approxDuration(estimate.data?.typical_seconds ?? null);
+  const slowSeconds = estimate.data?.slow_seconds ?? null;
+  const measured = (estimate.data?.samples ?? 0) > 0 && typical !== null;
+  const overdue = measured && slowSeconds !== null && elapsedMs > slowSeconds * 1000;
 
   return (
     <div className="animate-fade-up py-8">
@@ -110,6 +141,31 @@ export function RenderStep() {
                 );
               })}
             </ol>
+          )}
+
+          {!error && (
+            <div className="mt-5 border-t border-steel-700/70 pt-4">
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-blueprint-dim">
+                <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-400" aria-hidden />
+                <span className="font-mono text-blueprint-text">
+                  Waiting {elapsedLabel(elapsedMs)}
+                </span>
+                <span>
+                  {measured
+                    ? `Cases here usually take ${typical}.`
+                    : "No case has been timed here yet, so we cannot say how long yours will take."}
+                </span>
+              </p>
+              {overdue && (
+                <p role="status" className="mt-2 text-sm text-amber-200">
+                  This one is slower than the recent ones. It is still running.
+                </p>
+              )}
+              <p className="mt-2 text-sm text-blueprint-dim">
+                You can leave this page and come back. The address in your browser now
+                names this case, so opening it again brings you back here.
+              </p>
+            </div>
           )}
 
           {error && (

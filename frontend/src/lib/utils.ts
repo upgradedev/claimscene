@@ -27,6 +27,31 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
 }
 
+/** A rough, honest duration: "about 4 minutes", "about 40 seconds".
+ *
+ *  Deliberately coarse. The number behind it is a median over a handful of
+ *  real renders, so quoting it to the second would claim a precision we do not
+ *  have. Under 90 seconds reads in 10-second steps, above that in whole
+ *  minutes. Returns null for anything that is not a usable number, so a caller
+ *  can say "we have not measured this" instead of printing a broken value. */
+export function approxDuration(seconds: number | null | undefined): string | null {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return null;
+  if (seconds < 90) {
+    const step = Math.max(10, Math.round(seconds / 10) * 10);
+    return `about ${step} seconds`;
+  }
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return `about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+/** Elapsed wall-clock, counted up: "1 min 20 s", "45 s". */
+export function elapsedLabel(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes ? `${minutes} min ${seconds} s` : `${seconds} s`;
+}
+
 /** Encode a server-produced SVG string as a base64 data URL for an <img>.
  *
  *  We render every schematic preview through an <img src="data:image/svg+xml…">
