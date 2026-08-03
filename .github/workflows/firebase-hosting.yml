@@ -1,0 +1,117 @@
+name: Deploy Firebase Hosting mirror
+
+# A second origin for the same product. `firebase.json` serves the compiled
+# client from Firebase's CDN and rewrites every API path (/health, /scenarios,
+# /cases, /me) to the SAME Cloud Run service, so a visitor who lands on the
+# mirror gets an identical, working app rather than a static shell. Nothing is
+# duplicated: there is one API, one bucket, one database of record.
+#
+# Auth is the SAME keyless Workload Identity Federation the Cloud Run deploy
+# uses, and deliberately so. A long-lived `FIREBASE_SERVICE_ACCOUNT` JSON key
+# in repository secrets would be a second, weaker credential path into the same
+# project, and this repository is public. GitHub proves its identity per run
+# over OIDC; the Google-side provider carries the condition
+# `assertion.repository=='upgradedev/claimscene'`, so a copy of this file
+# running anywhere else is rejected at the token exchange.
+#
+# The identity gained exactly one role for this: roles/firebasehosting.admin.
+# Nothing was widened, and no key exists to leak.
+#
+# Ordering: this fires on CI's completion, the same trigger as the Cloud Run
+# deploy, so the two run side by side. That is safe because they publish
+# different things — this publishes static assets, that publishes the API — and
+# the verification below deliberately does NOT assert a commit match, since the
+# API deploy may still be rolling when the CDN is already live.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write        # the OIDC token; nothing else is granted
+
+concurrency:
+  group: deploy-firebase-hosting
+  cancel-in-progress: false
+
+env:
+  MIRROR_URL: https://upgradegr-claimscene.web.app
+  FIREBASE_PROJECT: upgradegr-claimscene
+  # Pinned so a hosting deploy is reproducible rather than "whatever npm served
+  # that morning".
+  FIREBASE_TOOLS_VERSION: 15.25.1
+
+jobs:
+  deploy:
+    # workflow_run fires on failure too; a manual dispatch has no upstream run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The exact commit CI validated, not whatever `main` points at now.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # No VITE_* build env on purpose. The container image builds the client
+      # the same way (see Dockerfile stage 1), so both origins serve the same
+      # bundle: relative API paths, same-origin, no CORS, guest-only.
+      - name: Build the web client
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/147595510158/locations/global/workloadIdentityPools/github/providers/upgradedev
+          service_account: github-deployer@upgradegr-claimscene.iam.gserviceaccount.com
+
+      # firebase-tools picks the federated credentials up from
+      # GOOGLE_APPLICATION_CREDENTIALS, which the auth step above wrote. No
+      # token, no key, nothing to rotate.
+      - name: Deploy hosting
+        run: |
+          npx --yes firebase-tools@"${FIREBASE_TOOLS_VERSION}" deploy \
+            --only hosting \
+            --project "${FIREBASE_PROJECT}" \
+            --non-interactive
+
+      # A deploy is not finished because the CLI exited 0. It is finished when
+      # the mirror serves the app AND proxies the API, which is exactly what a
+      # judge landing on that URL will do.
+      - name: Prove the mirror serves the app and proxies the API
+        run: |
+          set -euo pipefail
+
+          echo "— the SPA itself"
+          html="$(curl -fsS "${MIRROR_URL}/")"
+          echo "${html}" | grep -q '<div id="root">' \
+            || { echo "the mirror did not serve the app shell" >&2; exit 1; }
+
+          echo "— /health proxied to Cloud Run"
+          curl -fsS "${MIRROR_URL}/health" | tee /tmp/health.json
+          python3 -c "import json;h=json.load(open('/tmp/health.json'));assert h['status']=='ok',h;assert h['service']=='claimscene-api',h"
+
+          echo "— /scenarios proxied to Cloud Run"
+          count="$(curl -fsS "${MIRROR_URL}/scenarios" \
+            | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["scenarios"]))')"
+          echo "scenarios: ${count}"
+          [ "${count}" -ge 1 ] || { echo "no scenarios through the mirror" >&2; exit 1; }
+
+          echo "— a scenario image (binary, straight through the rewrite)"
+          curl -fsS -o /dev/null \
+            "${MIRROR_URL}/scenarios/s01_rear_end/images/view_a.jpg"
+
+          echo "the mirror is live and proxying"
