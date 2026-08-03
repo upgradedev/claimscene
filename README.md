@@ -375,20 +375,27 @@ manifest instead of pretending they do not exist.
 
 ## Demo video
 
-A narrated walkthrough lives at **`demo/claimscene-demo.mp4`** (about 2:56,
-1920x1080 H.264, ElevenLabs voiceover with burned captions, no music). It is
-assembled beat by beat from `demo/claimscene-demo.beats.json`: each beat's line
-is synthesized, the visual duration is locked to the measured audio, and a gentle
-Ken Burns move pans across the committed forensic-blueprint cards in
+A narrated walkthrough lives at **`demo/claimscene-demo.mp4`** (2:56, exactly
+176.2s, 1920x1080 H.264, ElevenLabs voiceover with burned captions, no music).
+It is assembled beat by beat from `demo/claimscene-demo.beats.json`: each beat's
+line is synthesized, the visual duration is locked to the measured audio, and a
+gentle Ken Burns move pans across the committed forensic-blueprint cards in
 `demo/assets/`. Six of the nine cards in use are undoctored screenshots of the
 running app: when the screen one of them shows changes, that card is reshot
 rather than edited, and the beat script's description records the date and the
-commit each refresh was shot at. The other three are generated cards: the
-opening thumbnail, the accuracy scoreboard, and the ports-and-adapters
-architecture card. The pan is resampled at sub-pixel phase (Pillow's float
-`resize(box=...)`), because cropping to whole pixels first froze a slow move
-for several frames at a time and then snapped it, which read on screen as a
-tremble.
+commit each refresh was shot at. On the sealed-case card both of the app's own
+video players are advanced before the shot, the same thing pressing play and
+pausing shows, and Chrome's media-control bar is hidden with CSS so browser
+furniture does not cover the picture; nothing inside either panel is touched.
+The other three cards are generated: the opening thumbnail, the accuracy
+scoreboard, and the ports-and-adapters architecture card. The pan is resampled
+at sub-pixel phase (Pillow's float `resize(box=...)`), because cropping to whole
+pixels first froze a slow move for several frames at a time and then snapped it,
+which read on screen as a tremble.
+
+The thirteen beats are budgeted against the four judging criteria, so none of
+them is left to a passing mention: real-world utility, production readiness,
+Backblaze B2, and Genblaze each get their own beats rather than a clause.
 Rebuild the video with `python scripts/build_video.py` (needs Pillow,
 an `ffmpeg` on PATH, and `ELEVENLABS_API_KEY`); the exact caption timings are
 written to `demo/claimscene-demo.en.srt`. CI runs `scripts/check_video.py`,

@@ -17,7 +17,12 @@ python, fastapi, react, typescript, genblaze, backblaze-b2, gmi-cloud, ffmpeg, g
 
 ## Video demo link
 The narrated source video is committed at **`demo/claimscene-demo.mp4`** (2:56,
-1920x1080 H.264, ElevenLabs voiceover, no music, burned captions + `demo/claimscene-demo.en.srt`).
+exactly 176.2s, 1920x1080 H.264, ElevenLabs voiceover, no music, burned captions
++ `demo/claimscene-demo.en.srt`). Its thirteen beats are budgeted so all four
+judging criteria get beats of their own rather than a passing clause: real-world
+utility 76s, production readiness 52s, Backblaze B2 14s, Genblaze 22s, and a 12s
+close that names both partners. The ports-and-adapters beat is counted under
+production readiness and also shows the live B2 and Genblaze adapters.
 It is built from `demo/claimscene-demo.beats.json` by `scripts/build_video.py` and
 re-verified in CI by `scripts/check_video.py` (A/V-sync + caption-order gate).
 TODO(owner): upload `demo/claimscene-demo.mp4` to YouTube (public, < 3 min, no
