@@ -62,7 +62,13 @@ test("the consumer path never shows developer vocabulary", async ({ page }) => {
   await page.getByRole("button", { name: /Try a sample scenario/i }).click();
   await assertPlainLanguage(page, "step 1 (source)");
 
+  // Scan again AFTER picking a scenario, not just before. The first version of
+  // this spec checked step 1 only on arrival and missed a line that appears
+  // once a sample is selected ("live runs the VLM ladder"), which then shipped.
+  // Copy that is conditional on state needs a scan in that state.
   await page.getByRole("button", { name: /Rear-end at a red light/i }).click();
+  await assertPlainLanguage(page, "step 1 (scenario selected)");
+
   await page.getByRole("button", { name: /Extract scene/i }).click();
 
   await expect(page.getByRole("heading", { name: /Review .* adjust the scene/i }))
