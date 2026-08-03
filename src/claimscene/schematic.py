@@ -85,6 +85,14 @@ class SchematicArtifacts:
     #: vehicle tracks to render (mirrors ``hero_png``'s own empty-case).
     seed_png: bytes = b""
 
+    #: Pixels-per-metre the SEED was rendered at. The seed is framed on its
+    #: own content rather than at the sealed frames' fixed scale (see
+    #: :func:`seed_scale_for`), so anything reasoning about the seed's pixel
+    #: space -- notably ``camera.apply_camera_push`` -- has to be told which
+    #: scale it is actually looking at instead of assuming the sealed one.
+    #: 0.0 when there is no seed to describe.
+    seed_scale: float = 0.0
+
     @property
     def frame_count(self) -> int:
         return len(self.frames_png)
@@ -200,6 +208,71 @@ def _burst(cx: float, cy: float, r_out: float = 1.4, r_in: float = 0.55,
 def _pose_at_index(timeline: Timeline, vehicle_id: str, index: int) -> TimedPose:
     track = next(t for t in timeline.tracks if t.vehicle_id == vehicle_id)
     return track.poses[index]
+
+
+#: How much of the seed frame the action should fill, per axis. The seed is
+#: an image-to-video prompt, and an image-to-video model composes: give it a
+#: 120 m by 90 m field with two 4.5 m cars in the middle (3.8% of the frame
+#: width each, about 10% together) and it reasonably reframes onto the
+#: subject, which is how a top-down T-junction came back as a close-up of two
+#: bumpers that read as a head-on. Framing the seed on its own content
+#: removes the model's reason to recompose. 0.62 keeps the junction, both
+#: approach arms and the vehicles' motion trails in shot; filling more than
+#: that crops the road context that makes the geometry legible.
+SEED_FILL_FRAC = 0.62
+
+#: Bounds on the computed seed scale, in pixels per metre. The lower bound is
+#: the sealed frames' own scale, so the seed is never WIDER than the sealed
+#: view; the upper bound stops a low-speed scene with two nearly-touching
+#: vehicles from zooming to a macro shot with no road left in frame.
+SEED_SCALE_MIN = 8.0
+SEED_SCALE_MAX = 26.0
+
+
+def seed_scale_for(timeline: Timeline, *, width: int = 960, height: int = 720,
+                   fill_frac: float = SEED_FILL_FRAC) -> float:
+    """Pixels-per-metre that frames ``timeline``'s action inside the seed.
+
+    Fits the union of every vehicle pose across the whole timeline and the
+    junction's own extent, so the road layout stays legible rather than only
+    the two bodies at the moment of contact, then scales that box to
+    ``fill_frac`` of the frame and clamps to ``[SEED_SCALE_MIN,
+    SEED_SCALE_MAX]``.
+
+    Deterministic and pure: same timeline, same number. It never raises, and
+    on a timeline with no tracks it returns ``SEED_SCALE_MIN`` so the caller
+    keeps today's behaviour rather than a divide-by-zero.
+    """
+    # Fit the IMPACT frame, which is what the seed depicts, not the whole
+    # trajectory. Fitting every pose means fitting the approach runs, which
+    # are 100 m of mostly empty road, and the answer collapses back to the
+    # wide view this function exists to replace.
+    if not timeline.tracks:
+        return SEED_SCALE_MIN
+    index = impact_frame_index(timeline)
+    xs: list[float] = []
+    ys: list[float] = []
+    for track in timeline.tracks:
+        meta = next((v for v in timeline.vehicles if v.id == track.vehicle_id), None)
+        if meta is None or not track.poses:
+            continue
+        pose = track.poses[min(index, len(track.poses) - 1)]
+        for cx, cy in _vehicle_corners(pose, meta.length_m, meta.width_m):
+            xs.append(cx)
+            ys.append(cy)
+    if not xs:
+        return SEED_SCALE_MIN
+    # The junction itself is part of the story: a crash at a T-junction that
+    # frames out the arms is exactly the ambiguity this whole change exists
+    # to remove.
+    j = float(timeline.junction_half_extent_m)
+    half_w = max(max(abs(min(xs)), abs(max(xs))), j)
+    half_h = max(max(abs(min(ys)), abs(max(ys))), j)
+    if half_w <= 0 and half_h <= 0:
+        return SEED_SCALE_MIN
+    fit = min(width * fill_frac / (2.0 * half_w) if half_w > 0 else SEED_SCALE_MAX,
+              height * fill_frac / (2.0 * half_h) if half_h > 0 else SEED_SCALE_MAX)
+    return max(SEED_SCALE_MIN, min(SEED_SCALE_MAX, fit))
 
 
 def impact_frame_index(timeline: Timeline) -> int:
@@ -551,12 +624,17 @@ class PillowSchematicRenderer:
             impact_i = impact_frame_index(timeline)
             hero = frames[impact_i]
             # ``title`` is irrelevant here: annotate=False never draws it.
+            # The seed gets its OWN scale, framed on the action, while every
+            # sealed artifact above keeps ``self.scale`` and its exact bytes.
+            seed_scale = seed_scale_for(timeline, width=self.width, height=self.height)
             seed = render_frame(timeline, impact_i, width=self.width,
-                                height=self.height, scale=self.scale,
+                                height=self.height, scale=seed_scale,
                                 annotate=False)
         else:
             hero = b""
             seed = b""
+            seed_scale = 0.0
         animation = encode_mp4(frames, fps=self.fps) if self.animate else None
         return SchematicArtifacts(static_svg=svg, hero_png=hero, frames_png=frames,
-                                  animation_mp4=animation, fps=self.fps, seed_png=seed)
+                                  animation_mp4=animation, fps=self.fps, seed_png=seed,
+                                  seed_scale=seed_scale)

@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from .camera import apply_camera_push
+from .camera import SEED_SCALE as CAMERA_SEED_SCALE, apply_camera_push
 from .case import CaseSpec, ReviewClassification
 from .evaluation import diff_scenes, review_counts
 from .keys import KeyStrategy, make_key
@@ -258,8 +258,14 @@ class CasePipeline:
         # always runs on whatever comes back, so a failed push here can
         # never mean an unwatermarked clip and never fails the render
         # outright. See ``camera.apply_camera_push``.
+        # The push is computed in the SEED's pixel space, and the seed is now
+        # framed on its own content rather than at the sealed frames' fixed
+        # scale, so pass the scale actually used instead of letting the camera
+        # assume it. Getting this wrong would not crash: it would silently aim
+        # the push at the wrong point.
         camera_result = apply_camera_push(
-            illustration_raw, timeline, duration_s=ILLUSTRATION_CLIP_DURATION_S)
+            illustration_raw, timeline, duration_s=ILLUSTRATION_CLIP_DURATION_S,
+            seed_scale=art.seed_scale or CAMERA_SEED_SCALE)
 
         still_burn = burn_still_watermark(still_raw)
         self._store(result, "illustration_still", "illustration",
