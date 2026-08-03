@@ -16,11 +16,11 @@ python, fastapi, react, typescript, genblaze, backblaze-b2, gmi-cloud, ffmpeg, g
 - GitHub repo: https://github.com/upgradedev/claimscene
 
 ## Video demo link
-The narrated source video is committed at **`demo/claimscene-demo.mp4`** (2:56,
-exactly 176.2s, 1920x1080 H.264, ElevenLabs voiceover, no music, burned captions
-+ `demo/claimscene-demo.en.srt`). Its thirteen beats are budgeted so all four
+The narrated source video is committed at **`demo/claimscene-demo.mp4`** (2:53,
+exactly 172.6s, 1920x1080 H.264, ElevenLabs voiceover, no music, burned captions
++ `demo/claimscene-demo.en.srt`). Its fifteen beats are budgeted so all four
 judging criteria get beats of their own rather than a passing clause: real-world
-utility 76s, production readiness 52s, Backblaze B2 14s, Genblaze 22s, and a 12s
+utility 73s, production readiness 54s, Backblaze B2 12s, Genblaze 22s, and an 11s
 close that names both partners. The ports-and-adapters beat is counted under
 production readiness and also shows the live B2 and Genblaze adapters.
 It is built from `demo/claimscene-demo.beats.json` by `scripts/build_video.py` and

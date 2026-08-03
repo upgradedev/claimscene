@@ -1,97 +1,111 @@
 {
   "fps": 30,
-  "total": 176.2,
+  "total": 172.6,
   "windows": [
     {
       "id": "01-hook",
       "section": 1,
       "start": 0.0,
-      "end": 15.4,
-      "dur": 15.4
+      "end": 13.033,
+      "dur": 13.033
     },
     {
       "id": "02-problem",
       "section": 2,
-      "start": 15.4,
-      "end": 31.833,
-      "dur": 16.433
+      "start": 13.033,
+      "end": 22.767,
+      "dur": 9.733
+    },
+    {
+      "id": "03a-tour",
+      "section": 3,
+      "start": 22.767,
+      "end": 35.1,
+      "dur": 12.333
     },
     {
       "id": "03-photos",
       "section": 3,
-      "start": 31.833,
-      "end": 48.3,
-      "dur": 16.467
+      "start": 35.1,
+      "end": 49.2,
+      "dur": 14.1
     },
     {
       "id": "04-review",
       "section": 3,
-      "start": 48.3,
-      "end": 63.7,
-      "dur": 15.4
+      "start": 49.2,
+      "end": 61.533,
+      "dur": 12.333
     },
     {
       "id": "05-render",
       "section": 4,
-      "start": 63.7,
-      "end": 77.133,
-      "dur": 13.433
+      "start": 61.533,
+      "end": 73.3,
+      "dur": 11.767
     },
     {
       "id": "06-reveal",
       "section": 4,
-      "start": 77.133,
-      "end": 88.2,
-      "dur": 11.067
+      "start": 73.3,
+      "end": 87.9,
+      "dur": 14.6
     },
     {
       "id": "07-architecture",
       "section": 5,
-      "start": 88.2,
-      "end": 104.667,
-      "dur": 16.467
+      "start": 87.9,
+      "end": 100.733,
+      "dur": 12.833
     },
     {
       "id": "06b-storage",
       "section": 5,
-      "start": 104.667,
-      "end": 118.7,
-      "dur": 14.033
+      "start": 100.733,
+      "end": 112.467,
+      "dur": 11.733
     },
     {
       "id": "08-authorship",
       "section": 5,
-      "start": 118.7,
-      "end": 129.533,
-      "dur": 10.833
+      "start": 112.467,
+      "end": 120.0,
+      "dur": 7.533
     },
     {
       "id": "09-verify",
       "section": 5,
-      "start": 129.533,
-      "end": 140.067,
+      "start": 120.0,
+      "end": 130.533,
       "dur": 10.533
+    },
+    {
+      "id": "09b-link",
+      "section": 5,
+      "start": 130.533,
+      "end": 140.967,
+      "dur": 10.433
     },
     {
       "id": "10-measured",
       "section": 6,
-      "start": 140.067,
-      "end": 152.6,
-      "dur": 12.533
+      "start": 140.967,
+      "end": 151.433,
+      "dur": 10.467
     },
     {
       "id": "10b-shipped",
       "section": 6,
-      "start": 152.6,
-      "end": 163.9,
-      "dur": 11.3
+      "start": 151.433,
+      "end": 161.167,
+      "dur": 9.733
     },
     {
       "id": "11-close",
       "section": 7,
-      "start": 163.9,
-      "end": 176.2,
-      "dur": 12.3
+      "start": 161.167,
+      "end": 172.6,
+      "dur": 11.433
     }
   ]
 }
