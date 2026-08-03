@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Hero } from "./Hero";
 
 describe("Hero", () => {
@@ -37,5 +37,55 @@ describe("Hero", () => {
     fireEvent.click(screen.getByRole("button", { name: /Start a case/i }));
     fireEvent.click(screen.getByRole("button", { name: /Try a sample scenario/i }));
     expect(onStart).toHaveBeenCalledTimes(2);
+  });
+
+  describe("guided tour entry point", () => {
+    beforeEach(() => window.localStorage.clear());
+    afterEach(() => window.localStorage.clear());
+
+    it("offers the tour, opens it on demand, and never opens it unasked", () => {
+      render(<Hero onStart={() => {}} />);
+      // Opt-in: nothing overlays the page until the visitor asks for it.
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Take the guided tour/i }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
+    });
+
+    it("anchors every tour step to something real on the page", () => {
+      const { container } = render(<Hero onStart={() => {}} />);
+      // The banner's anchor lives in DisclosureBanner (App-level), so the last
+      // step is checked in the e2e rather than here.
+      for (const id of ["what-it-is", "factual-layer", "illustration-layer", "you-confirm", "verify"]) {
+        expect(container.querySelector(`[data-tour="${id}"]`), `anchor ${id}`).not.toBeNull();
+      }
+    });
+
+    it("hints once for a first-time visitor, then never nags again", () => {
+      const { unmount } = render(<Hero onStart={() => {}} />);
+      expect(screen.getByText(/New here\?/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Take the guided tour/i }));
+      fireEvent.click(screen.getByRole("button", { name: /Leave tour/i }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.queryByText(/New here\?/i)).not.toBeInTheDocument();
+      // And it stays gone on the next visit, not just the rest of this one.
+      unmount();
+      render(<Hero onStart={() => {}} />);
+      expect(screen.queryByText(/New here\?/i)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Take the guided tour/i })).toBeInTheDocument();
+    });
+
+    it("the tour's closing call to action starts a case", () => {
+      const onStart = vi.fn();
+      render(<Hero onStart={onStart} />);
+      fireEvent.click(screen.getByRole("button", { name: /Take the guided tour/i }));
+      for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole("button", { name: /^Next/i }));
+      // Two "Start a case" buttons exist at this point (the hero CTA and the
+      // tour's own); the one inside the dialog is the one under test.
+      const dialog = screen.getByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: /^Start a case/i }));
+      expect(onStart).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 });

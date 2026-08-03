@@ -75,13 +75,20 @@ def test_seed_png_is_a_distinct_unannotated_impact_frame(timeline):
     must be a real, valid PNG at the impact frame, and it must differ from
     the sealed hero frame (which carries the schematic's own watermark and
     labels burned in already: feeding that forward would double the on-clip
-    caption, see the PR that added this field)."""
+    caption, see the PR that added this field).
+
+    It is also rendered at its OWN scale, framed on the impact rather than at
+    the sealed frames' fixed 8 px/m, because the seed is an image-to-video
+    prompt and a model given two 4.5 m cars in a 120 m field recomposes onto
+    the subject. ``seed_scale`` reports the scale actually used."""
     renderer = PillowSchematicRenderer(animate=False)
     art = renderer.render(timeline)
     assert art.seed_png.startswith(PNG_MAGIC)
     assert art.seed_png != art.hero_png
+    assert art.seed_scale > 0
     assert art.seed_png == render_frame(
-        timeline, impact_frame_index(timeline), annotate=False)
+        timeline, impact_frame_index(timeline), annotate=False,
+        scale=art.seed_scale)
 
 
 def test_render_frame_annotate_false_is_opt_in_and_differs_from_default(timeline):
@@ -117,3 +124,58 @@ def test_every_layout_template_renders():
         assert svg.startswith("<svg") and svg.endswith("</svg>")
         frame = render_frame(timeline, 0)
         assert frame.startswith(PNG_MAGIC)
+
+
+# ── seed framing ────────────────────────────────────────────────────────────
+def _t_junction_timeline():
+    from claimscene.layout import LayoutEngine
+    from claimscene.scenarios import get_scenario
+    from claimscene.scene import SceneGraph
+    return LayoutEngine().build(
+        SceneGraph.model_validate(get_scenario("s05_t_intersection")["truth"]))
+
+
+def test_seed_is_framed_on_the_impact_not_on_the_whole_approach():
+    """The seed is an image-to-video prompt, and a model composes.
+
+    At the sealed frames' fixed 8 px/m the visible world is 120 m wide and a
+    4.5 m car is 3.8% of the frame, so the model reframes onto the subject.
+    That is how a top-down T-junction came back as a close-up of two bumpers
+    reading as a head-on. Framing the seed on the impact removes the reason
+    to recompose.
+    """
+    from claimscene.schematic import SEED_SCALE_MAX, SEED_SCALE_MIN, seed_scale_for
+
+    tl = _t_junction_timeline()
+    scale = seed_scale_for(tl)
+    assert SEED_SCALE_MIN <= scale <= SEED_SCALE_MAX
+    # Strictly tighter than the sealed view, and by a wide margin.
+    assert scale > SEED_SCALE_MIN * 2
+    car_frac = 4.5 / (960 / scale)
+    assert car_frac > 0.10, f"a car still fills only {car_frac:.1%} of the seed"
+
+
+def test_seed_scale_is_deterministic():
+    from claimscene.schematic import seed_scale_for
+    tl = _t_junction_timeline()
+    assert seed_scale_for(tl) == seed_scale_for(tl)
+
+
+def test_seed_framing_never_changes_the_sealed_artifacts():
+    """The seed gets its own scale; every SEALED artifact keeps the fixed one.
+
+    This is the load-bearing guarantee: hero_png, the animation frames and
+    the SVG are what a case seals and re-verifies against, so a change made
+    for the generative layer's benefit must not move their bytes.
+    """
+    from claimscene.schematic import PillowSchematicRenderer, render_frame
+
+    tl = _t_junction_timeline()
+    art = PillowSchematicRenderer(animate=False).render(tl, title="t")
+    from claimscene.schematic import impact_frame_index
+    i = impact_frame_index(tl)
+    assert art.hero_png == render_frame(tl, i, title="t", width=960, height=720,
+                                        scale=8.0)
+    assert art.seed_scale > 8.0
+    assert art.seed_png != render_frame(tl, i, width=960, height=720, scale=8.0,
+                                        annotate=False)
