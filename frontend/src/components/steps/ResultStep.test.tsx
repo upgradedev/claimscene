@@ -126,4 +126,26 @@ describe("ResultStep (the sealed-case money screen)", () => {
     expect(screen.getByText(/#case\/golden-case$/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Copy link/i })).toBeInTheDocument();
   });
+
+  it("the placeholder in the picture frame never carries operator instructions",
+    () => {
+      // This copy used to read "Deploy in live mode (GMI + B2)" at whoever was
+      // filing a claim, and it was the one string the plain-language e2e gate
+      // cannot see (that spec scans landing/source/review, never this step).
+      for (const degraded of [true, false]) {
+        const { unmount } = renderWithClient(
+          <ResultStep result={makeRender({ provider_degraded: degraded })} />,
+        );
+        const frame = screen.getByText(/still verifies below/i).closest("div");
+        const text = frame?.textContent ?? "";
+        expect(text).not.toMatch(/gmi|b2|deploy|live mode|—/i);
+        unmount();
+      }
+    });
+
+  it("does not call a failed live picture an offline run", () => {
+    renderWithClient(<ResultStep result={makeRender({ provider_degraded: true })} />);
+    expect(screen.getByText(/No picture was made for this case/i)).toBeInTheDocument();
+    expect(screen.getByText(/illustration: unavailable/i)).toBeInTheDocument();
+  });
 });

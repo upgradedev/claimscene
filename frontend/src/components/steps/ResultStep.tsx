@@ -60,6 +60,10 @@ function CaseLinkCard({ caseId }: { caseId: string }) {
 export function ResultStep({ result }: { result: RenderResponse }) {
   const reset = useCaseStore((s) => s.reset);
   const playable = illustrationIsPlayable(result);
+  // Read before the narrowing: `illustrationIsPlayable` is a type predicate, so
+  // inside the not-playable branch below TypeScript has narrowed `result` away
+  // entirely and this field is unreachable there.
+  const providerDegraded = result.provider_degraded;
   const reportHref = `data:text/markdown;charset=utf-8,${encodeURIComponent(result.report_markdown)}`;
 
   return (
@@ -71,8 +75,13 @@ export function ResultStep({ result }: { result: RenderResponse }) {
             <span className="font-mono text-cyan-200">{result.case_id}</span>
             <HashChip hash={result.manifest_hash} label="manifest_hash" />
             {result.degraded ? (
-              <Badge variant="amber" title="The illustration is deterministic offline bytes, not a live generative render.">
-                illustration: offline
+              <Badge
+                variant="amber"
+                title="The illustration is a sealed placeholder, not a live generative render."
+              >
+                {/* A live picture that failed is not the same thing as a case
+                    made without one, and the badge should not call it that. */}
+                illustration: {result.provider_degraded ? "unavailable" : "placeholder"}
               </Badge>
             ) : (
               <Badge variant="verified">illustration: {result.provider}</Badge>
@@ -170,10 +179,17 @@ export function ResultStep({ result }: { result: RenderResponse }) {
               />
             ) : (
               <div className="grid h-full w-full place-items-center p-6 text-center">
-                <p className="font-mono text-xs text-blueprint-dim">
-                  The generative clip runs on the live path. This offline run sealed a
-                  deterministic placeholder — its provenance still verifies below. Deploy
-                  in live mode (GMI + B2) to render the illustration.
+                {/* Two different truths, and saying the wrong one is worse than
+                    saying nothing. A live picture that FAILED is not "this run
+                    was offline", and an operator instruction naming the
+                    services we use is not something to put in front of someone
+                    who has just had a crash. */}
+                <p className="font-mono text-xs leading-relaxed text-blueprint-dim">
+                  {providerDegraded
+                    ? "No picture was made for this case. The schematic beside it holds " +
+                      "the facts and is unaffected, and this case still verifies below."
+                    : "This case was made without the picture service. What was sealed " +
+                      "here instead is a real file, and its provenance still verifies below."}
                 </p>
               </div>
             )}

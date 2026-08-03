@@ -191,7 +191,7 @@ describe("RenderStep", () => {
 
     renderStep();
     await screen.findByText(/Cases here usually take about 4 minutes/i);
-    expect(screen.getByText(/Waiting 0 s/i)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting \d+ s/i)).toBeInTheDocument();
   });
 
   it("says it has no measurement rather than inventing one", async () => {

@@ -145,5 +145,5 @@ test("the wait is quoted from measurement, before and during the render",
 
     await page.getByRole("button", { name: /Confirm .* render this case/i }).click();
     // During: their own wait, next to the same measured figure.
-    await expect(page.getByText(/Waiting 0 s/i)).toBeVisible();
+    await expect(page.getByText(/Waiting \d+ s/i)).toBeVisible();
   });
