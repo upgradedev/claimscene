@@ -375,12 +375,16 @@ manifest instead of pretending they do not exist.
 
 ## Demo video
 
-A narrated walkthrough lives at **`demo/claimscene-demo.mp4`** (about 2:35,
-1920x1080 H.264, ElevenLabs voiceover with burned captions). It is assembled
-beat by beat from `demo/claimscene-demo.beats.json`: each beat's line is
-synthesized, the visual duration is locked to the measured audio, and a gentle
+A narrated walkthrough lives at **`demo/claimscene-demo.mp4`** (about 2:42,
+1920x1080 H.264, ElevenLabs voiceover with burned captions, no music). It is
+assembled beat by beat from `demo/claimscene-demo.beats.json`: each beat's line
+is synthesized, the visual duration is locked to the measured audio, and a gentle
 Ken Burns move pans across the committed forensic-blueprint cards in
-`demo/assets/`. Rebuild it with `python scripts/build_video.py` (needs Pillow,
+`demo/assets/`. Six of the eight cards in use are undoctored screenshots of the
+running app: when the screen one of them shows changes, that card is reshot
+rather than edited, and the beat script's description records the date and the
+commit each refresh was shot at. The other two are generated gallery cards.
+Rebuild the video with `python scripts/build_video.py` (needs Pillow,
 an `ffmpeg` on PATH, and `ELEVENLABS_API_KEY`); the exact caption timings are
 written to `demo/claimscene-demo.en.srt`. CI runs `scripts/check_video.py`,
 which re-verifies the committed mp4 against the beat script: under three

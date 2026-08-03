@@ -1,49 +1,52 @@
 1
-00:00:00,000 --> 00:00:15,733
+00:00:00,000 --> 00:00:15,133
 After a crash, the first real job is documentation. Which cars,
 which damage, which road, and what actually happened. ClaimScene
 turns accident photos into a case a claims handler can trust.
 Honest, illustrated, and never faked.
 
 2
-00:00:15,733 --> 00:00:31,000
+00:00:15,133 --> 00:00:32,200
 That matters now, because generative video made accident scenes
 easy to fake and hard to trust. A convincing AI reconstruction
 that is really just a guess is dangerous as evidence. Insurers
 and courts are already warning about synthetic media in claims.
 
 3
-00:00:31,000 --> 00:00:47,700
+00:00:32,200 --> 00:00:48,000
 Every case starts with photos, yours or a sample scenario like
 this one. A vision model reads them into a closed vocabulary
 only: vehicle kind, colour, approach, and a twelve position
 clock for damage and impact, never a free coordinate.
 
 4
-00:00:47,700 --> 00:01:02,433
-The proposed scene is yours to correct. Click a vehicle to
-select it, then drag it between the four approaches, or drag its
-handle around the twelve clock positions. Every edit snaps to
-the same closed vocabulary, and the schematic redraws live.
+00:00:48,000 --> 00:01:04,667
+The proposed scene is yours to correct. Click a vehicle, drag it
+between the four approaches, or drag its handle around the
+twelve clock positions, and the schematic redraws live. And the
+app is blunt about what that does not prove. Confirming a field
+is not the same as verifying it.
 
 5
-00:01:02,433 --> 00:01:16,867
+00:01:04,667 --> 00:01:18,200
 Confirm, and rendering runs as a background job the app submits
 and polls, since a real illustration render can take minutes.
 First the deterministic schematic, then the disclosed AI clip,
 then the sealed manifest.
 
 6
-00:01:16,867 --> 00:01:36,900
-Here both layers sit sealed side by side. The schematic on the
-left is deterministic, drawn by code. The clip on the right is
-seeded from that same schematic, so its layout is inherited, not
-requested. A camera push toward the point of impact is computed
-too, and the disclosure is burned into the pixels, not just
-asked for in a prompt.
+00:01:18,200 --> 00:01:46,033
+Here both layers sit sealed side by side, under a line that
+spells out what sealed does not mean. Unchanged files, not a
+verified account. The schematic on the left is deterministic,
+drawn by code. The clip on the right is seeded from that same
+schematic, so its layout is inherited, not requested. A camera
+push toward the point of impact is computed too, and the
+disclosure is burned into the pixels, not just asked for in a
+prompt.
 
 7
-00:01:36,900 --> 00:01:58,767
+00:01:46,033 --> 00:02:07,000
 The sealed manifest states that split in plain language. The
 geometry, camera path, and disclosure caption are computed by
 this codebase, never invented by the model. The model's real
@@ -52,20 +55,20 @@ reconstruction, and the clip as a stylised illustration of it,
 never the reverse.
 
 8
-00:01:58,767 --> 00:02:10,067
+00:02:07,000 --> 00:02:17,533
 Press Verify, and the SHA-256 seal recomputes right in your
 browser. Behind it sits a receipt of eighteen named checks, each
 re-run from the stored bytes on the server.
 
 9
-00:02:10,067 --> 00:02:22,633
+00:02:17,533 --> 00:02:30,100
 And the accuracy is measured, not asserted. The primary model
 scores one hundred percent weighted field accuracy on a
 committed seven scenario evaluation set, with a dated scoreboard
 living in the repo.
 
 10
-00:02:22,633 --> 00:02:35,067
+00:02:30,100 --> 00:02:42,067
 ClaimScene is live on Cloud Run, built on Genblaze and Backblaze
 B2, and the whole project is open source. Honest accident
 documentation. Illustrated, and never faked.
