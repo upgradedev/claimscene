@@ -8,6 +8,8 @@ export function DisclosureBanner() {
     <div
       role="region"
       aria-label="AI-content disclosure"
+      // The guided tour's last step ("what sealed does not mean") rings this.
+      data-tour="disclosure"
       // OPAQUE warm-dark bar (not a 7%-alpha tint): the ethics line is the
       // product's spine, so it must render deterministically — a translucent
       // background over the page's grid image left its contrast unresolvable by

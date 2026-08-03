@@ -104,6 +104,19 @@
     );
     animation: sweep 1.6s ease-in-out infinite;
   }
+
+  /* The guided tour's anchor highlight (see GuidedTour.tsx). Deliberately a
+     box-shadow and not an outline or a border: box-shadow paints outside the
+     box without ever entering layout, so ringing a full-width card can never
+     widen the page's scrollable area on a 375px screen. `scroll-margin` keeps
+     the ringed element clear of the sticky header and the tour sheet. */
+  [data-tour-active] {
+    border-radius: 0.5rem;
+    box-shadow:
+      0 0 0 2px #38bdf8,
+      0 0 0 7px rgba(56, 189, 248, 0.18);
+    scroll-margin: 6rem 0 14rem;
+  }
 }
 
 /* Vestibular safety: silence the sweep for reduced-motion users. */

@@ -12,6 +12,12 @@ if (!("revokeObjectURL" in URL)) {
   URL.revokeObjectURL = () => {};
 }
 
+// jsdom has no layout, so it does not implement scrollIntoView at all. The
+// guided tour calls it on the element each step points at.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 // framer-motion's whileInView uses IntersectionObserver, absent in jsdom.
 if (!("IntersectionObserver" in globalThis)) {
   class MockIO {
