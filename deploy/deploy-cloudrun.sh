@@ -89,9 +89,24 @@ fi
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "▶ build sha=${BUILD_SHA} time=${BUILD_TIME}"
 
+# Naming the staging bucket explicitly is what lets the CI identity stay
+# least-privilege. Left to itself, `builds submit` resolves (and would create)
+# the default `<project>_cloudbuild` bucket through a Service Usage call, and
+# fails with a misleading "forbidden from accessing the bucket" unless the
+# caller holds Service Usage Admin -- misleading because the bucket is readable
+# and writable; it is the resolution step that is gated. Pointing at the bucket
+# that already exists skips that path entirely. Measured, not guessed: as the
+# deploy service account, `gcloud storage ls` on the bucket succeeds while a
+# plain submit fails, and the same submit succeeds with this flag.
+BUILD_SOURCE_ARGS=()
+if [ "${SKIP_PROVISIONING}" = "1" ]; then
+  BUILD_SOURCE_ARGS=(--gcs-source-staging-dir "gs://${PROJECT_ID}_cloudbuild/source")
+fi
+
 gcloud builds submit "${REPO_ROOT}" \
   --config "${REPO_ROOT}/deploy/cloudbuild.yaml" \
   --substitutions "_IMAGE=${IMAGE},_BUILD_SHA=${BUILD_SHA},_BUILD_TIME=${BUILD_TIME}" \
+  "${BUILD_SOURCE_ARGS[@]}" \
   --project "${PROJECT_ID}"
 
 # ── 4. Runtime config: non-secrets as env vars, secrets from Secret Manager ──
