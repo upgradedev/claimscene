@@ -246,7 +246,13 @@ jobs:
         with:
           python-version: "3.11"
       # Only reach for the network if the runner image does not already carry
-      # ffprobe, and let apt retry a flaky mirror rather than sitting on it.
+      # ffprobe. When it does not, the third-party repositories baked into the
+      # hosted image are dropped FIRST: `apt-get update` refreshes all of them,
+      # and packages.microsoft.com began answering 403 Forbidden, which took the
+      # whole update down with exit 100 (and, before that, hung it for thirteen
+      # minutes). This job needs Ubuntu's own archive and nothing else, so an
+      # unrelated publisher having a bad day is no longer allowed to fail the
+      # video gate and, through it, both deploys.
       - name: Ensure ffprobe is available
         run: |
           set -euo pipefail
@@ -254,7 +260,9 @@ jobs:
             ffprobe -version | head -1
             exit 0
           fi
+          sudo rm -f /etc/apt/sources.list.d/microsoft*.list                      /etc/apt/sources.list.d/microsoft*.sources                      /etc/apt/sources.list.d/azure-cli*
           sudo apt-get update -o Acquire::Retries=3
           sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 ffmpeg
+          ffprobe -version | head -1
       - name: Verify the narrated demo video (A/V sync + caption order)
         run: python scripts/check_video.py
