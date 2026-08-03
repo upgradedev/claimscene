@@ -1,4 +1,4 @@
-# ClaimScene — Devpost submission package
+# ClaimScene: Devpost submission package
 
 > Field-by-field copy for the Backblaze Generative Media Hackathon form. Draft filled, not submitted. Live app: https://claimscene-147595510158.europe-west1.run.app · Repo: https://github.com/upgradedev/claimscene
 
@@ -81,7 +81,7 @@ The honest lesson came from the live path. Our contract tests run against the re
 - A measured accuracy number (100% on the committed set) instead of a vibe.
 - A human-in-the-loop review step that is the trust story and the production-readiness story at once.
 - A sealed AI→human approval receipt: the render seals the exact proposed→confirmed scene diff with a recomputable `decision_digest` that self-voids if the confirmed scene drifts, and the whole case re-verifies from stored bytes through a named-check receipt (`GET /cases/{id}/verify`) plus a detached, self-sealed receipt written as its own B2 object.
-- 521 backend tests plus 295 frontend tests and 20 real-browser tests, gitleaks, CodeQL and a machine-checkable readiness gate, all runnable with zero credentials.
+- Over 550 backend tests plus over 350 frontend tests and 38 real-browser specs, gitleaks, CodeQL and a machine-checkable readiness gate, all runnable with zero credentials. Those are floors, deliberately: the suites grow, so the exact figures live in the [CI run](https://github.com/upgradedev/claimscene/actions/workflows/ci.yml) for the commit rather than in a sentence that goes stale.
 - Push to `main` builds and deploys itself once CI is green, with keyless GitHub-to-Google auth and no stored credentials, and the deploy fails unless the live `GET /health` reports the commit it just built. So anyone can confirm in one request that the running app is the code they are reading.
 
 ### What we learned
@@ -108,12 +108,16 @@ First-notice-of-loss integrations, multi-incident case files, a reviewer audit t
 Already done (verified 2026-07-23): the `claimscene` B2 bucket and a
 write-entitled, scoped application key are provisioned, and the live app is
 deployed on Cloud Run rendering real Genblaze output straight to B2
-(`storage=B2Storage`) — a live case wrote a real seedream still and pixverse
-clip to the bucket (that still-generation step was later replaced by the
-schematic-seeded illustration described above; this line is a historical
-record of that date's mechanism, not the current one). (If the entitled key
-is ever absent, live mode degrades storage to the in-memory object store
-rather than failing — a documented fallback, not the current state.)
+(`storage=B2Storage`). What a live case writes today: the illustration clip is
+seeded by the case's own deterministic schematic, so the sealed manifest carries
+`still_model: null` and `still_source: "schematic:impact_frame"`. No model
+generates a still for the illustration at all. Genblaze's `seedream-5.0-lite`
+is still in the project, doing a different job: it rendered the committed sample
+scenario photos (`scripts/generate_eval_scenarios.py`), which is why the input
+attribution on a sample case names it. Earlier on 2026-07-23 the illustration
+did start from a generated seedream still; that step no longer exists. (If the
+entitled key is ever absent, live mode degrades storage to the in-memory object
+store rather than failing, a documented fallback, not the current state.)
 
 ## Relationship to our other entry
 ClaimScene shares an in-house Backblaze B2 storage and provenance-sealing foundation with our other submission, Cinemory (cinematic memory reels). The two are different products: different domain, different data model, different extraction and layout pipeline, and a different UI. This is disclosed here and in the README.
