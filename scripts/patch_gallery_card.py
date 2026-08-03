@@ -144,7 +144,10 @@ def apply_patch_spec(spec: dict, spec_path: str) -> str:
         # script on an already-patched image a visible (if subtle) second
         # blend rather than a true no-op -- this union keeps the operation
         # idempotent regardless of how tightly erase_box was measured.
-        pad = 4
+        # The default 4px bleed is right for an isolated stat, but a line of
+        # body text can sit only 3px below its own box title. Overridable per
+        # patch so the erase cannot eat a neighbouring row's glyph bottoms.
+        pad = patch.get("pad", 4)
         text_box = (draw_x + bbox[0] - pad, draw_y + bbox[1] - pad,
                     draw_x + bbox[2] + pad, draw_y + bbox[3] + pad)
         erase_box = patch["erase_box"]

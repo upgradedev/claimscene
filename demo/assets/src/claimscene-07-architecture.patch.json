@@ -23,12 +23,13 @@
       "ink_bottom_y": 593
     },
     {
-      "note": "GenblazeMediaProvider line 1: 'seedream-5.0-lite still' claimed a model call that no longer happens. The still is a raster of the deterministic schematic (pipeline.py: still_model=None, still_source='schematic:impact_frame'). Line 2 ('pixverse-v6-i2v clip - GMI') is still accurate and is deliberately left alone. Geometry measured from the shipped PNG's own pixels, not eyeballed: ink spans x 331..716, y 390..401, grey (138,153,160) on the box fill (14,22,25) -- which is why this patch overrides the card's amber stat palette.",
-      "erase_box": [329, 387, 719, 403],
+      "note": "GenblazeMediaProvider line 1: 'seedream-5.0-lite still' claimed a model call that no longer happens. The still is a raster of the deterministic schematic (pipeline.py: still_model=None, still_source='schematic:impact_frame'). Line 2 ('pixverse-v6-i2v clip - GMI') is still accurate and is deliberately left alone. Geometry measured from the shipped PNG's own pixels: ink spans x 331..479, y 391..398 (25 chars at 5.94 px/char), grey (138,153,160) on the box fill (14,22,25) -- hence the palette override. Three neighbours constrain the erase and are why pad drops to 2: the box title's glyph bottoms end at y=387, line 2 starts at y=406, and the box's right border is a single column at x=716.",
+      "erase_box": [329, 389, 500, 403],
       "new_text": "schematic raster still →",
       "anchor_left_x": 331,
-      "ink_top_y": 390,
-      "ink_bottom_y": 401,
+      "ink_top_y": 391,
+      "ink_bottom_y": 398,
+      "pad": 2,
       "fill_color": [14, 22, 25],
       "text_color": [138, 153, 160]
     }
