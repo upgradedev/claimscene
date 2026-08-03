@@ -234,14 +234,27 @@ jobs:
   demo-video:
     runs-on: ubuntu-latest
     needs: secret-scan
+    # This job hung twice in one afternoon inside `apt-get install`, for 13
+    # minutes and counting each time, with no output and no failure. A hung
+    # gate is worse than a failing one: it blocks the deploys that fire on CI's
+    # completion while looking like work in progress. Ten minutes is many times
+    # what the job needs, so this only ever fires on a stall.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install ffmpeg (provides ffprobe)
+      # Only reach for the network if the runner image does not already carry
+      # ffprobe, and let apt retry a flaky mirror rather than sitting on it.
+      - name: Ensure ffprobe is available
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          set -euo pipefail
+          if command -v ffprobe >/dev/null 2>&1; then
+            ffprobe -version | head -1
+            exit 0
+          fi
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 ffmpeg
       - name: Verify the narrated demo video (A/V sync + caption order)
         run: python scripts/check_video.py
