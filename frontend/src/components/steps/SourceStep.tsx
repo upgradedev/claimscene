@@ -254,7 +254,7 @@ export function SourceStep() {
       <div className="mt-8 flex items-center justify-between gap-4">
         <p className="max-w-sm font-mono text-xs text-blueprint-dim">
           {scenario
-            ? `Sample "${scenario.title}" — offline returns the shipped ground-truth scene; live runs the VLM ladder.`
+            ? `Sample "${scenario.title}" — offline returns the shipped ground-truth scene; live reads the photos with AI vision.`
             : "The extractor proposes a constrained scene graph. You review and adjust it next."}
         </p>
         <Button size="lg" disabled={!hasSource || extract.isPending} onClick={onExtract}>
