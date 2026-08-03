@@ -13,11 +13,11 @@ illustration — not evidence"*, and an incident report. Every artifact is
 content-addressed on Backblaze B2 with SHA-256-sealed provenance that also
 records where every input photo came from.
 
-![ClaimScene — illustrated, never faked: the app's forensic-blueprint hero card, showing the tagline, "Built with Genblaze" and "Stored on Backblaze B2" badges, and a live scene schematic stamped "ILLUSTRATION NOT EVIDENCE"](demo/assets/claimscene-01-thumbnail.png)
+![ClaimScene, illustrated and never faked: the app's forensic-blueprint hero card, showing the tagline, "Built with Genblaze" and "Stored on Backblaze B2" badges, and a live scene schematic stamped "ILLUSTRATION NOT EVIDENCE"](demo/assets/claimscene-01-thumbnail.png)
 
 A **forensic-blueprint web app** wraps the pipeline: the AI *proposes* a
 constrained scene, you *review and adjust* it against a live-redrawing
-schematic, and only then is the case sealed. AI proposes, you confirm — the
+schematic, and only then is the case sealed. AI proposes, you confirm. The
 human-in-the-loop step is the centrepiece, and the whole flow runs on committed
 sample scenarios so anyone can try it with zero photos.
 
@@ -33,7 +33,7 @@ media that cannot say what it is becomes a liability. So ClaimScene splits
 every case into two layers and never lets them blur:
 
 1. **The factual layer.** A vision model may only fill a closed vocabulary
-   (enums, clock positions, speed *bands* — never coordinates). Deterministic
+   (enums, clock positions, speed *bands*, never coordinates). Deterministic
    code turns that into geometry, an animated schematic, and a report. Same
    input, same bytes, every time.
 2. **The illustration layer.** A short video clip animating the case's own
@@ -108,34 +108,34 @@ flowchart LR
 ```
 
 The orchestrator depends only on ports. The fakes implement the same
-protocols with no network, so the whole pipeline — including real SHA-256
-provenance — runs offline in CI with zero credentials. In `live` mode a
+protocols with no network, so the whole pipeline, including real SHA-256
+provenance, runs offline in CI with zero credentials. In `live` mode a
 missing credential degrades that backend to its fake with a WARNING and the
 manifest honestly records `degraded: true`. It never crashes.
 
 ## The web app (review-adjust)
 
 A React + Vite + TypeScript client in a deliberate **forensic-blueprint**
-identity — dark steel drafting board, amber survey line-work, cyan technical
-annotations, monospace throughout — served same-origin by the FastAPI backend
+identity: dark steel drafting board, amber survey line-work, cyan technical
+annotations, monospace throughout, served same-origin by the FastAPI backend
 (one container, one port). A persistent top banner never lets the disclosure
 out of sight: *"Illustrations are AI-generated — NOT EVIDENCE."*
 
 The user journey is four steps, and the middle one is the whole point:
 
 1. **Source.** Upload accident photos (per-photo role tagging), **or** pick one
-   of the committed sample scenarios — so a reviewer can run the entire flow
+   of the committed sample scenarios, so a reviewer can run the entire flow
    with zero photos of their own.
-2. **Review & adjust — the centrepiece.** The extractor only *proposes* a
+2. **Review & adjust: the centrepiece.** The extractor only *proposes* a
    scene. You edit it in a panel where every control is bound to the closed
-   vocabulary — dropdowns for kind/colour/road/maneuver, a **12-position clock
+   vocabulary: dropdowns for kind/colour/road/maneuver, a **12-position clock
    picker** for damage and impact points (never free-text coordinates). A
    static top-down schematic **redraws live** as you edit (`POST
-   /cases/preview-schematic`). *AI proposes, you confirm* — nothing is sealed
+   /cases/preview-schematic`). *AI proposes, you confirm.* Nothing is sealed
    until you render.
 3. **Render.** The full pipeline runs: animated schematic (factual layer) +
    disclosed illustration + report + a canonical-SHA-256 manifest, all stored.
-   The seal also captures a **sealed AI→human approval receipt** — the exact
+   The seal also captures a **sealed AI→human approval receipt**, the exact
    proposed→confirmed scene diff and a `decision_digest` that self-voids if the
    confirmed scene ever drifts from what you approved (a demo click is honestly
    classified `interactive_demo`, never an authenticated approval).
@@ -172,12 +172,12 @@ field → `422`), and the schematic's dynamic text is XML-escaped at the source.
 | `GET /cases/{id}/illustration` | illustration playback (302 → fresh presigned URL live / stream offline) |
 
 Every route works offline with zero credentials. A live media-provider failure
-degrades **that request** to the offline provider against the same storage —
-the response says so (`provider_degraded`) and the sealed manifest records the
+degrades **that request** to the offline provider against the same storage.
+The response says so (`provider_degraded`) and the sealed manifest records the
 provider that actually ran; it never 500s because a remote backend misbehaved.
 It also says **what kind** of failure it was, as one token from a closed set
 (`degrade_kind`: `credit` / `auth` / `rate_limit` / `timeout` / `unavailable` /
-`unknown` — see `src/claimscene/degrade.py`), sealed into the manifest's
+`unknown`, see `src/claimscene/degrade.py`), sealed into the manifest's
 `illustration` block and turned into a plain sentence for the visitor. The
 upstream status line and error body never leave the server; they go to the log
 next to the same kind, so an operator can find the real reason from the message
@@ -186,7 +186,7 @@ someone was shown.
 A case is addressable, so losing the tab does not lose the case: the web client
 puts the id in the URL (`#job/<id>` while it renders, `#case/<id>` once sealed)
 and reopens either from the routes above. An id another caller cannot see 404s
-identically to one that never existed — a shared link cannot confirm that
+identically to one that never existed. A shared link cannot confirm that
 someone else's case exists.
 
 ### Run the web app locally
@@ -255,7 +255,7 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 pip install -e ".[server]"      # [server] adds the API (fastapi + multipart)
 
-pytest                          # 521 offline backend tests
+pytest                          # 550+ offline backend tests
 python -m claimscene.cli --case demo --out out
 ```
 
@@ -277,18 +277,18 @@ python scripts/readiness.py --min 0
 
 ## What the manifest seals
 
-- `inputs[]` — SHA-256, media type, role, and **source attribution** per
+- `inputs[]`: SHA-256, media type, role, and **source attribution** per
   photo: `user_upload | staged_demo | public_domain | licensed |
   synthetic_generated`, plus optional `attribution` and `license` strings.
-- `scene_graph`, `timeline`, `report` — hashes of the factual layer.
-- `schematic` — SVG/PNG/MP4 hashes, frame count, and the watermark string.
-- `illustration` — provider, clip model/prompt/hash, still
+- `scene_graph`, `timeline`, `report`: hashes of the factual layer.
+- `schematic`: SVG/PNG/MP4 hashes, frame count, and the watermark string.
+- `illustration`: provider, clip model/prompt/hash, still
   model/prompt/hash, the honest `degraded` flag, and `authorship_note`: one
   plain statement of what is computed (geometry, camera path, disclosure)
   versus what the model actually contributes (visual style only, no
   placement guarantee).
-- `disclosure` — the exact string `AI-generated illustration — not evidence`.
-- `manifest_hash` — canonical-JSON SHA-256 over all of the above. Any edit,
+- `disclosure`: the exact string `AI-generated illustration — not evidence`.
+- `manifest_hash`: canonical-JSON SHA-256 over all of the above. Any edit,
   including re-badging an input's source, breaks verification.
 
 ![Live app screenshot of the Provenance panel: the manifest seal hash next to a Verify in browser button, the Backblaze B2 storage and illustration provider/model fields, and the sealed Authorship Split explanation of what the model contributed versus what was computed deterministically](demo/assets/claimscene-05-provenance.png)
@@ -305,13 +305,13 @@ always machine-derived, so identity stays content-addressed even for
 hostile input.
 
 Alongside the manifest, each sealed case also writes a small **detached
-receipt** (`receipt` kind) — its own object, `GET /cases/{id}/receipt`. It
+receipt** (`receipt` kind), its own object at `GET /cases/{id}/receipt`. It
 distils the manifest hash, the Genblaze illustration output digest, and the
 review decision digest into a self-sealed attestation whose own
 `receipt_digest` recomputes, so a downstream reader can re-verify the case
 (and bind those two cited digests back to the manifest) without re-fetching
 every byte. *Honesty caveat:* the append-only `index.jsonl` proves an artifact
-was **recorded**, not that it is **immutable** — pair the bucket with B2
+was **recorded**, not that it is **immutable**. Pair the bucket with B2
 Object Lock / object-versioning for true write-once tamper-evidence.
 
 Environment contract (canonical Backblaze names primary, legacy aliases
@@ -346,7 +346,7 @@ deterministic renderer that produced it, never a generative model.
 The SDK-boundary lesson came from Cinemory, our other MIT entry that shares
 this adapter foundation: the real Genblaze SDK's own mock provider does no
 server-side input validation, so a pipeline step built without
-`external_inputs=` compiles, runs, and quietly drops the source image —
+`external_inputs=` compiles, runs, and quietly drops the source image,
 passing every test and failing only live, with GMI Cloud rejecting the real
 submission as `image (Required parameter is missing)`.
 `tests/integration/test_genblaze_contract.py` pins that exact regression
@@ -365,7 +365,7 @@ fails this contract test in CI, not a live demo.
 | Scene extraction (VLM ladder) | GMI `google/gemma-4-31b-it` (primary) → GMI `google/gemini-3.5-flash` (fallback) → Nebius `Qwen/Qwen2.5-VL-72B-Instruct` (independent-provider fallback) | `FakeVisionExtractor` (deterministic fixtures) |
 | Illustration seed (top-down schematic raster) | none, deterministic `PillowSchematicRenderer` (same code path in both modes) | same code (no model call) |
 | Illustration clip (image-to-video from the schematic seed) | `pixverse-v6-i2v` (default) or `Kling-Image2Video-V2.1-Master` (premium) via Genblaze + GMI Cloud | `FakeMediaProvider` (deterministic bytes) |
-| Schematic + layout + report | none — deterministic code by design | same code (no LLM anywhere) |
+| Schematic + layout + report | none, deterministic code by design | same code (no LLM anywhere) |
 
 The ladder falls through on rate limits and transport errors (retry with
 backoff first), and every reply must pass the constrained SceneGraph
@@ -381,13 +381,13 @@ color, road layout, signal, approach, maneuver, damage and impact clock
 positions within one hour). The fallback rung `google/gemini-3.5-flash`
 also scored 100% on every scenario it actually answered, but GMI rate
 limits (429) zeroed two of its seven scenarios during the run, so its
-committed number is 71.4% — a capacity figure, not an accuracy one; the
+committed number is 71.4%, a capacity figure, not an accuracy one; the
 failures are recorded in the scoreboard JSON. This is exactly why the
 ladder exists and why gemma is the primary. The dated scoreboard lives in
 `eval/results/` and the readiness gate fails the build if a committed
 scoreboard ever drops below 60%.
 
-![Scoreboard card: 100% weighted field accuracy across all 7 eval scenarios for the primary model google/gemma-4-31b-it, with a per-field breakdown — vehicle count, kind, colour, road layout, signal, approach, maneuver, damage and impact clock positions — all passing](demo/assets/claimscene-06-accuracy.png)
+![Scoreboard card: 100% weighted field accuracy across all 7 eval scenarios for the primary model google/gemma-4-31b-it, with a per-field breakdown (vehicle count, kind, colour, road layout, signal, approach, maneuver, damage and impact clock positions) all passing](demo/assets/claimscene-06-accuracy.png)
 
 How the eval works, and what it does not claim: each scenario in
 `eval/scenarios/` is a staged toy-diorama photo set (three seedream-rendered
@@ -452,7 +452,12 @@ desynced or over-length video fails the build.
 
 ## Testing & CI
 
-- **521 offline backend tests** (unit / integration / e2e): schema
+Every count below is a **floor**, not a reading. The suites grow, and a number
+written down goes stale the same day; the exact figures for any commit are in
+that commit's [CI run](https://github.com/upgradedev/claimscene/actions/workflows/ci.yml),
+which cannot drift because it is the thing that ran.
+
+- **Over 550 offline backend tests** (unit / integration / e2e): schema
   round-trips and rejection of hallucinated fields, layout determinism and
   contact-geometry properties, golden-file SVG, provenance seal/tamper, real
   B2 adapter against an S3 stub (**+ a presign contract test asserting SigV4 +
@@ -461,25 +466,25 @@ desynced or over-length video fails the build.
   SDK-boundary contract tests, and the **full API chain** through FastAPI's
   TestClient (extract → preview → render → get → verify → playback, honest
   degrade, path sanitisation, 422s).
-- **295 frontend tests** (Vitest, 31 files): the review-panel edit logic, the
+- **Over 350 frontend tests** (Vitest, 35 files): the review-panel edit logic, the
   schematic-preview live-update wiring, the ReviewStep centrepiece render, the
   **ExtractProgress** extract-latency UI, the playback-url selection, and the
   in-browser verify pinned to a **golden manifest produced by the real backend**
   (whose sealed em-dash exercises `ensure_ascii`).
-- CI (GitHub Actions): gitleaks v8.18.4 secret scan first, then in parallel —
+- CI (GitHub Actions): gitleaks v8.18.4 secret scan first, then in parallel:
   a Python job (ruff, pytest, pip-audit, **readiness gate GATING at `--min
   95`** with a *Web Application* criterion driving the API via TestClient),
   a **frontend job** (typecheck → Vitest → production build), and a
-  **real-browser end-to-end job** (38 Playwright/Chromium tests) that drives
+  **real-browser end-to-end job** (38 Playwright/Chromium specs) that drives
   the built client through the whole source → review → render → sealed-case
   journey and gates accessibility (zero serious/critical axe violations),
-  responsive layout at 375/768/1280, and **plain language** — the consumer path
-  fails the build if it leaks developer vocabulary at someone who has just had
-  a crash (the sealed provenance ledger is exempt on purpose, since there the
+  responsive layout at 375/768/1280, and **plain language**, where the
+  consumer path fails the build if it leaks developer vocabulary at someone
+  who has just had a crash (the sealed provenance ledger is exempt on purpose, since there the
   wording is evidence).
 - **CD:** once CI is green on `main`, `deploy-cloudrun.yml` builds and deploys
   the service, then polls the live `GET /health` and **fails if `build.commit`
-  is not the commit it just built** — a deploy is finished when the running
+  is not the commit it just built**. A deploy is finished when the running
   app says so, not when `gcloud` exits 0. It checks out the exact commit CI
   validated rather than whatever `main` points at by then, so the build stamp
   never names untested code. Auth is **Workload Identity Federation: no
@@ -494,9 +499,9 @@ desynced or over-length video fails the build.
   then serves the real hero PNG instead of MP4); `@pytest.mark.live` smokes run
   only when `GMI_API_KEY` is present (never in CI).
 
-**Adversarial proof, not self-report.** `tests/security/` — authZ/abuse
+**Adversarial proof, not self-report.** `tests/security/` covers authZ/abuse
 bounds, injection and path-traversal, upload validation, provenance-tamper
-integrity, sensitive-data exposure, and SSRF posture — runs in CI as its own
+integrity, sensitive-data exposure, and SSRF posture, and runs in CI as its own
 `pen-test` job, alongside a `codeql` job that statically analyses the Python
 and JavaScript/TypeScript source on every push. Two of its assertions are the
 sharpest test of the closed-vocabulary thesis above:
@@ -505,7 +510,7 @@ sharpest test of the closed-vocabulary thesis above:
   `test_smuggled_top_level_field_is_rejected_422`, and
   `test_dangling_impact_reference_is_rejected_422` hand `/cases/render` an
   invented enum, a smuggled field (a hallucinated GPS coordinate), or a
-  reference to a vehicle id that doesn't exist — the `extra="forbid"` schema
+  reference to a vehicle id that doesn't exist. The `extra="forbid"` schema
   rejects all three with 422.
 - **Fault immunity, not a heuristic.** `test_scene_model_has_no_fault_or_liability_field`
   and `test_fault_injection_field_is_rejected_at_the_api_422` confirm no
@@ -523,8 +528,8 @@ fact, structurally absent from the type the model is allowed to return.
 ClaimScene shares an in-house B2 storage + provenance foundation (content-
 addressed keys, durable `index.jsonl`, canonical-JSON SHA-256 sealing,
 readiness-gate structure) with our other entry, **Cinemory** (MIT). The
-domain — constrained scene vocabulary, deterministic layout engine,
-schematic renderer, honest-media manifest — is new and specific to
+domain (constrained scene vocabulary, deterministic layout engine,
+schematic renderer, honest-media manifest) is new and specific to
 ClaimScene.
 
 ## Repository layout
@@ -588,11 +593,16 @@ readiness criterion.
 Done (live, verified 2026-07-23): the container is **deployed to Cloud Run** at
 a public URL, and the **`claimscene` B2 bucket** with a write-entitled, scoped
 application key is provisioned. A live case render ran end to end against it
-(`storage=B2Storage`), writing real objects — including a seedream establishing
-still and a pixverse illustration clip, to the bucket (that still-generation
-step was replaced by the schematic-seeded illustration described in "How
-Genblaze is used" above; this entry is a historical record of that date's
-mechanism, not the current one).
+(`storage=B2Storage`), writing real objects to the bucket. What a live case
+writes today is the mechanism described in "How Genblaze is used" above: the
+illustration clip is seeded by the case's own deterministic schematic, so the
+sealed manifest carries `still_model: null` and `still_source:
+"schematic:impact_frame"`, and no model generates a still for the illustration.
+`seedream-5.0-lite` is still used, for a different job: it rendered the
+committed sample scenario photos (`scripts/generate_eval_scenarios.py`), which
+is why a sample case's input attribution names it. Earlier on 2026-07-23 the
+illustration did start from a generated seedream still; that step no longer
+exists.
 
 Remaining (user-gated): the optional premium clip path
 (`Kling-Image2Video-V2.1-Master`) exposed in the UI.
