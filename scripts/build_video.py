@@ -187,13 +187,27 @@ def lerp_rect(a: list[float], b: list[float], t: float) -> list[float]:
     return [a[i] + (b[i] - a[i]) * t for i in range(4)]
 
 
-def contain(crop: Image.Image, size: tuple[int, int], bg: tuple[int, int, int],
+def contain(card: Image.Image, box: tuple[float, float, float, float],
+            size: tuple[int, int], bg: tuple[int, int, int],
             overlay: Image.Image) -> Image.Image:
-    """Fit ``crop`` inside ``size`` (letter/pillarbox), paste the caption."""
+    """Fit the source rect ``box`` inside ``size`` (letter/pillarbox), paste the
+    caption.
+
+    ``box`` is in source pixels and is deliberately NOT rounded to whole ones.
+    Pillow's ``resize(..., box=...)`` takes a float source rect and resamples at
+    exactly that sub-pixel phase, which is what makes a slow Ken Burns move
+    glide. Cropping to integers first (the old path) quantized the move: a beat
+    that pans 24 source pixels over 454 frames held one crop for 2-5 frames and
+    then snapped a whole pixel, and because the left and right edges rounded
+    independently the width oscillated by one pixel too, so the picture visibly
+    trembled instead of drifting.
+    """
     width, height = size
-    scale = min(width / crop.width, height / crop.height)
-    new_w, new_h = max(1, round(crop.width * scale)), max(1, round(crop.height * scale))
-    resized = crop.resize((new_w, new_h), Image.LANCZOS)
+    x0, y0, x1, y1 = box
+    src_w, src_h = max(1.0, x1 - x0), max(1.0, y1 - y0)
+    scale = min(width / src_w, height / src_h)
+    new_w, new_h = max(1, round(src_w * scale)), max(1, round(src_h * scale))
+    resized = card.resize((new_w, new_h), Image.LANCZOS, box=(x0, y0, x1, y1))
     frame = Image.new("RGB", size, bg)
     frame.paste(resized, ((width - new_w) // 2, (height - new_h) // 2))
     frame.paste(overlay, (0, 0), overlay)
@@ -233,11 +247,12 @@ def render_beat(card: Image.Image, beat: dict, duration: float, fps: int,
             for f_idx in range(frames):
                 t = f_idx / max(1, frames - 1)
                 fx, fy, fw, fh = lerp_rect(start, end, t)
-                box = (round(fx * cw), round(fy * ch),
-                       round((fx + fw) * cw), round((fy + fh) * ch))
-                box = (max(0, box[0]), max(0, box[1]),
-                       min(cw, box[2]), min(ch, box[3]))
-                frame = contain(card.crop(box), size, bg, overlay)
+                # Kept in floats end to end (see contain): rounding here is what
+                # made the move judder.
+                box = (max(0.0, fx * cw), max(0.0, fy * ch),
+                       min(float(cw), (fx + fw) * cw),
+                       min(float(ch), (fy + fh) * ch))
+                frame = contain(card, box, size, bg, overlay)
                 prog = (t0 + (f_idx / fps)) / total
                 draw = ImageDraw.Draw(frame)
                 draw.rectangle([0, height - 4, width, height], fill=(24, 32, 42))

@@ -1,7 +1,7 @@
 {
   "schema": "claimscene/demo-beats/v1",
   "title": "ClaimScene — narrated demo walkthrough",
-  "description": "Per-beat, audio-locked script. build_video.py synthesizes each narration line (ElevenLabs), locks the beat's visual duration to the measured audio, and renders a gentle Ken Burns move across the committed cards in demo/assets/ — real captured screenshots of the running app plus two title cards. check_video.py re-verifies the rendered mp4 against this file. A screenshot goes stale the moment the screen changes, so each refresh records what was reshot and from which commit. The 04-review and 06-reveal cards were recaptured on 2026-08-03 from the live Cloud Run deployment running commit 8dc5279, so the video now shows the two honesty disclosures shipped in 4a477ee (what sealing does and does not mean, and that confirming a field is not verifying it) and the enlarged impact-clock faces. The 08, 10, 12 and 13 cards are still the 2026-08-02 set shot at aab8123.",
+  "description": "Per-beat, audio-locked script. build_video.py synthesizes each narration line (ElevenLabs), locks the beat's visual duration to the measured audio, and renders a gentle Ken Burns move across the committed cards in demo/assets/ — real captured screenshots of the running app plus three generated cards. check_video.py re-verifies the rendered mp4 against this file. A screenshot goes stale the moment the screen changes, so each refresh records what was reshot and from which commit. The 04-review and 06-reveal cards were recaptured on 2026-08-03 from the live Cloud Run deployment running commit 8dc5279, so the video now shows the two honesty disclosures shipped in 4a477ee (what sealing does and does not mean, and that confirming a field is not verifying it) and the enlarged impact-clock faces. The 08, 10, 12 and 13 cards are still the 2026-08-02 set shot at aab8123. The 07-architecture beat was added on 2026-08-03 so the video actually shows the architecture it talks about; it uses claimscene-07-architecture.png, the ports-and-adapters card corrected earlier that day in dc788b8. That card is generated, not a screenshot, so its stat row and its adapter lines have to be re-checked against the code whenever the test counts or the live wiring change.",
   "voice": { "provider": "elevenlabs", "voice_name": "Brian", "voice_id": "nPczCjzI2devNBz1zQrb", "model_id": "eleven_multilingual_v2" },
   "render": { "fps": 30, "width": 1920, "height": 1080, "tail_seconds": 0.35 },
   "sections": {
@@ -72,10 +72,20 @@
       "focus_start": [0.235, 0.152, 0.53, 0.51],
       "focus_end": [0.485, 0.275, 0.28, 0.39],
       "caption": "Both layers, sealed. Sealed means the files are unchanged, not that the account is verified.",
-      "narration": "Here both layers sit sealed side by side, under a line that spells out what sealed does not mean. Unchanged files, not a verified account. The schematic on the left is deterministic, drawn by code. The clip on the right is seeded from that same schematic, so its layout is inherited, not requested. A camera push toward the point of impact is computed too, and the disclosure is burned into the pixels, not just asked for in a prompt."
+      "narration": "Here both layers sit sealed side by side, under a line that spells out what sealed does not mean. Unchanged files, not a verified account. The schematic on the left is deterministic, drawn by code. The clip on the right is seeded from that same schematic, so its layout is inherited, not requested, and the disclosure is burned into the pixels, not just asked for in a prompt."
     },
     {
-      "id": "07-authorship",
+      "id": "07-architecture",
+      "section": 5,
+      "kicker": "PORTS AND ADAPTERS, NOW LIVE",
+      "card": "claimscene-07-architecture.png",
+      "focus_start": [0.0, 0.0, 1.0, 1.0],
+      "focus_end": [0.028, 0.3125, 0.58, 0.58],
+      "caption": "Ports and adapters. Live VLM, deterministic renderer, real Backblaze B2, Genblaze from our own raster.",
+      "narration": "Underneath, it is ports and adapters. A vision ladder reads the photos, code draws the schematic to the same bytes every run, Backblaze B2 holds the evidence, and Genblaze animates our own schematic raster, never a generated still."
+    },
+    {
+      "id": "08-authorship",
       "section": 5,
       "kicker": "THE AUTHORSHIP SPLIT, SEALED",
       "card": "claimscene-12-provenance.png",
@@ -85,7 +95,7 @@
       "narration": "The sealed manifest states that split in plain language. The geometry, camera path, and disclosure caption are computed by this codebase, never invented by the model. The model's real contribution is visual style only. Treat the schematic as the reconstruction, and the clip as a stylised illustration of it, never the reverse."
     },
     {
-      "id": "08-verify",
+      "id": "09-verify",
       "section": 5,
       "kicker": "PROVENANCE YOU CAN VERIFY",
       "card": "claimscene-13-verify-receipt.png",
@@ -95,7 +105,7 @@
       "narration": "Press Verify, and the SHA-256 seal recomputes right in your browser. Behind it sits a receipt of eighteen named checks, each re-run from the stored bytes on the server."
     },
     {
-      "id": "09-measured",
+      "id": "10-measured",
       "section": 6,
       "kicker": "MEASURED, NOT VIBES",
       "card": "claimscene-06-accuracy.png",
@@ -105,7 +115,7 @@
       "narration": "And the accuracy is measured, not asserted. The primary model scores one hundred percent weighted field accuracy on a committed seven scenario evaluation set, with a dated scoreboard living in the repo."
     },
     {
-      "id": "10-close",
+      "id": "11-close",
       "section": 7,
       "kicker": "HONEST ACCIDENT DOCUMENTATION",
       "card": "claimscene-01-thumbnail.png",

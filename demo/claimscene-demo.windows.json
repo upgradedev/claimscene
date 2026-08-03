@@ -1,76 +1,83 @@
 {
   "fps": 30,
-  "total": 162.067,
+  "total": 176.333,
   "windows": [
     {
       "id": "01-hook",
       "section": 1,
       "start": 0.0,
-      "end": 15.133,
-      "dur": 15.133
+      "end": 14.2,
+      "dur": 14.2
     },
     {
       "id": "02-problem",
       "section": 2,
-      "start": 15.133,
-      "end": 32.2,
-      "dur": 17.067
+      "start": 14.2,
+      "end": 29.733,
+      "dur": 15.533
     },
     {
       "id": "03-photos",
       "section": 3,
-      "start": 32.2,
-      "end": 48.0,
-      "dur": 15.8
+      "start": 29.733,
+      "end": 46.667,
+      "dur": 16.933
     },
     {
       "id": "04-review",
       "section": 3,
-      "start": 48.0,
-      "end": 64.667,
-      "dur": 16.667
+      "start": 46.667,
+      "end": 64.467,
+      "dur": 17.8
     },
     {
       "id": "05-render",
       "section": 4,
-      "start": 64.667,
-      "end": 78.2,
-      "dur": 13.533
+      "start": 64.467,
+      "end": 78.5,
+      "dur": 14.033
     },
     {
       "id": "06-reveal",
       "section": 4,
-      "start": 78.2,
-      "end": 106.033,
-      "dur": 27.833
+      "start": 78.5,
+      "end": 103.133,
+      "dur": 24.633
     },
     {
-      "id": "07-authorship",
+      "id": "07-architecture",
       "section": 5,
-      "start": 106.033,
-      "end": 127.0,
-      "dur": 20.967
+      "start": 103.133,
+      "end": 119.633,
+      "dur": 16.5
     },
     {
-      "id": "08-verify",
+      "id": "08-authorship",
       "section": 5,
-      "start": 127.0,
-      "end": 137.533,
-      "dur": 10.533
+      "start": 119.633,
+      "end": 140.7,
+      "dur": 21.067
     },
     {
-      "id": "09-measured",
+      "id": "09-verify",
+      "section": 5,
+      "start": 140.7,
+      "end": 151.067,
+      "dur": 10.367
+    },
+    {
+      "id": "10-measured",
       "section": 6,
-      "start": 137.533,
-      "end": 150.1,
-      "dur": 12.567
+      "start": 151.067,
+      "end": 164.133,
+      "dur": 13.067
     },
     {
-      "id": "10-close",
+      "id": "11-close",
       "section": 7,
-      "start": 150.1,
-      "end": 162.067,
-      "dur": 11.967
+      "start": 164.133,
+      "end": 176.333,
+      "dur": 12.2
     }
   ]
 }
