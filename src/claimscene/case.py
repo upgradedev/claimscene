@@ -83,3 +83,12 @@ class CaseSpec(BaseModel):
     # The confirmed scene's own notes *before* the human-in-the-loop reset,
     # carried into the review receipt so the AI's real notes are not lost.
     prior_confidence_notes: list[str] = Field(default_factory=list)
+    # Why the live illustration provider could not be used for THIS seal — one
+    # of ``claimscene.degrade.KINDS``, set only on the honest-degrade re-run in
+    # ``api._run_render`` (the live provider was configured and failed). Left
+    # ``None`` on a normal run AND on a deployment that has no live provider
+    # configured at all: there, ``illustration.provider`` already says
+    # ``fake-media`` and no live attempt was made, so claiming a failure kind
+    # would be fiction. Sealed into the manifest's illustration block only when
+    # set, which also keeps manifests byte-identical for every existing path.
+    degrade_kind: str | None = None

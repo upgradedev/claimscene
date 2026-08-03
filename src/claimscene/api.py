@@ -70,6 +70,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -80,7 +81,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.responses import RedirectResponse, Response
 from pydantic import ValidationError
 
-from . import auth, config, jobs, scenarios
+from . import auth, config, degrade, jobs, scenarios
 from .adapters import FakeMediaProvider, FakeVisionExtractor, InMemoryStorage
 from .case import (
     CLIENT_REVIEW_CLASSIFICATIONS,
@@ -402,14 +403,23 @@ def _run_render(scene: SceneGraph, photos: list[CasePhoto], case_id: str, *,
     except Exception as exc:
         if isinstance(provider, FakeMediaProvider):
             raise
+        # ONE closed-vocabulary token (see claimscene.degrade) describing what
+        # kind of failure this was. It is the only part of the upstream error
+        # that reaches the browser or the sealed manifest; the full exception —
+        # status line, upstream body, everything — goes to the log below, so an
+        # operator can grep this one line and find the real reason behind the
+        # sentence the visitor was shown.
+        kind = degrade.classify(exc)
         _log.exception(
-            "live media provider %r failed for case %r; re-sealing this "
-            "request with the offline provider (storage unchanged)",
-            getattr(provider, "name", "?"), case_id,
+            "live media provider %r failed for case %r (degrade kind %r); "
+            "re-sealing this request with the offline provider (storage unchanged)",
+            getattr(provider, "name", "?"), case_id, kind,
         )
-        result = CasePipeline(extractor, FakeMediaProvider(), storage).run(spec)
+        result = CasePipeline(extractor, FakeMediaProvider(), storage).run(
+            spec.model_copy(update={"degrade_kind": kind}))
         body = _case_body(result, degraded_request=True)
         body["degrade_reason"] = type(exc).__name__
+        body["degrade_kind"] = kind
         return body
 
 
@@ -864,9 +874,16 @@ def _run_render_job(
     storage = _tenant_job_storage(uid)
     try:
         jobs.mark_running(storage, job_id)
+        started = time.monotonic()
         result = _run_render(scene, photos, case_id, proposed=proposed,
                              reviewer_id=reviewer_id, classification=classification,
                              prior_notes=prior_notes, storage=storage)
+        # Measured, not guessed: this is where the "about N minutes" the client
+        # shows before and during a render comes from (see
+        # ``GET /cases/render/estimate``). Recorded before the status flips to
+        # done so a poller that reads "done" can already see its own sample.
+        jobs.record_duration(storage, time.monotonic() - started,
+                             degraded=bool(result.get("degraded")))
         jobs.mark_done(storage, job_id, result)
     except Exception as exc:
         _log.exception("background render job %r failed", job_id)
@@ -918,6 +935,31 @@ async def create_render_job(
     return {"job_id": job_id, "status": "queued"}
 
 
+@app.get("/cases/render/estimate")
+def get_render_estimate(tenant: Annotated[str | None, Depends(get_tenant)]) -> dict:
+    """How long a render actually takes here, measured over recent cases.
+
+    A live illustration takes minutes, and someone deciding whether to wait
+    deserves a number. This one is earned: every completed render records its
+    own wall-clock duration (see ``claimscene.jobs.record_duration``) and this
+    summarises the recent ones as a median + 90th percentile.
+
+    On a deployment with a live provider, only NON-degraded runs count: an
+    offline placeholder seals in about a second and would make the live wait
+    look shorter than it is. On an offline deployment every run is the offline
+    path, so every sample counts.
+
+    ``samples: 0`` is a real answer, not an error — a fresh deployment has
+    measured nothing yet, and the client says so rather than showing a figure
+    nobody measured. Tenant-scoped like everything else here: a signed-in
+    caller's estimate comes from their own renders.
+    """
+    samples = jobs.read_durations(_tenant_storage(tenant))
+    live = not _provider.name.startswith("fake")
+    considered = [s for s in samples if not s.get("degraded")] if live else samples
+    return {**jobs.estimate(considered), "mode": config.mode()}
+
+
 @app.get("/cases/render/jobs/{job_id}")
 def get_render_job(job_id: str, tenant: Annotated[str | None, Depends(get_tenant)]) -> dict:
     """Poll a submitted render job's status.
@@ -949,6 +991,92 @@ def get_case(case_id: str, tenant: Annotated[str | None, Depends(get_tenant)]) -
     if not match:
         raise HTTPException(404, f"no case named {case_id!r}")
     return Response(content=storage.get(match["key"]), media_type="application/json")
+
+
+@app.get("/cases/{case_id}/result")
+def get_case_result(case_id: str, tenant: Annotated[str | None, Depends(get_tenant)]) -> dict:
+    """A sealed case rebuilt into the SAME body a fresh render returns.
+
+    This is what makes a case survive the tab that made it. ``POST
+    /cases/render/jobs`` hands the client a full result once, in memory; if the
+    page reloads, that object is gone even though every byte of it is still in
+    the store. Rather than teach the client a second, weaker way to display a
+    case from the manifest alone (which carries hashes, not the report text or
+    the scene), this re-reads the sealed artifacts and returns the identical
+    shape as :func:`_case_body`. One client rendering path, whether the case
+    was sealed a second ago or last week.
+
+    Nothing here is recomputed or re-generated: the scene, the report and every
+    hash come from the stored bytes, so a resumed case shows exactly what was
+    sealed. ``url`` is ``None`` on each artifact — the canonical storage URL is
+    private, and playback goes through the api-relative routes (which mint a
+    fresh presigned URL per request) exactly as it does for a fresh render. The
+    ``artifacts`` map covers the sealed case artifacts with a fixed storage
+    location (``_ARTIFACT_STORAGE`` — the same set server-side verification
+    re-reads), not the input photos, whose keys carry their original filenames.
+
+    404 for a case this caller cannot see, which — because ``storage`` is
+    tenant-scoped — is the same answer for an id that never existed, an id that
+    belongs to a different tenant, and a case whose bytes are gone. A caller
+    cannot tell those apart, which is the point: a link to someone else's case
+    must not confirm that it exists. A manifest that is present but unreadable,
+    or missing its scene/report, degrades to that same 404 rather than a 500.
+    """
+    storage = _tenant_storage(tenant)
+    match = _case_index_match(case_id, kind="manifest", suffix="/manifest.json",
+                              storage=storage)
+    if not match:
+        raise HTTPException(404, f"no case named {case_id!r}")
+    fetch = _artifact_fetcher(case_id, storage)
+    try:
+        manifest = json.loads(storage.get(match["key"]))
+        scene = json.loads(fetch("scene_graph") or b"")
+        report_markdown = (fetch("report") or b"").decode("utf-8")
+        illustration = manifest["illustration"]
+    except Exception as exc:  # unreadable/incomplete case → the same 404
+        _log.warning("case %r is stored but not displayable: %s: %s",
+                     case_id, type(exc).__name__, exc)
+        raise HTTPException(404, f"no case named {case_id!r}") from exc
+
+    artifacts: dict[str, dict] = {}
+    for name, (kind, suffix) in _ARTIFACT_STORAGE.items():
+        row = _case_index_match(case_id, kind=kind, suffix=suffix, storage=storage)
+        if not row:
+            continue
+        artifacts[name] = {
+            # The sha256 is the key's own content anchor (see keys.make_key) —
+            # read back from the key rather than trusted from the manifest, so
+            # this reports what is actually stored.
+            "sha256": row["key"].split("/")[-2],
+            "size_bytes": row.get("size", 0),
+            "content_type": row.get("content_type") or "application/octet-stream",
+            "url": None,
+        }
+    animation = "schematic_animation" in artifacts
+    degrade_kind = illustration.get("degrade_kind")
+    body = {
+        "case_id": manifest.get("case_id", case_id),
+        "manifest_hash": manifest.get("manifest_hash", ""),
+        "manifest_url": f"/cases/{quote(case_id, safe='')}",
+        "provider": illustration.get("provider", "unknown"),
+        "degraded": bool(illustration.get("degraded")),
+        # A sealed case records WHY the live provider was skipped only when it
+        # was tried and failed (see CaseSpec.degrade_kind), so its presence is
+        # exactly the "the live provider failed on this case" signal the fresh
+        # render body carries as ``provider_degraded``.
+        "provider_degraded": bool(degrade_kind),
+        "has_schematic_animation": animation,
+        "schematic_kind": "animation" if animation else "static",
+        "schematic_url": f"/cases/{quote(case_id, safe='')}/schematic",
+        "illustration_url": f"/cases/{quote(case_id, safe='')}/illustration",
+        "report_markdown": report_markdown,
+        "scene": scene,
+        "warnings": list(scene.get("confidence_notes") or []),
+        "artifacts": artifacts,
+    }
+    if degrade_kind:
+        body["degrade_kind"] = degrade_kind
+    return body
 
 
 @app.get("/cases/{case_id}/verify")
