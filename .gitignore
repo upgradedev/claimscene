@@ -69,6 +69,9 @@ readiness.json
 # hero-illustration.jpg is a downscaled crop of the sealed live-evidence
 # toy-diorama render (eval/evidence/live_illustration/illustration.png).
 !frontend/src/assets/*.jpg
+# Brand icons served from the web root. Drawn from the Wordmark's own geometry
+# by code (a crosshair on a dark plate) — vector art, never a photograph.
+!frontend/public/*.png
 private/
 real-photos/
 eval/scenarios/_spend.json
