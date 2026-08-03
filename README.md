@@ -1,5 +1,11 @@
 # ClaimScene
 
+[![CI](https://github.com/upgradedev/claimscene/actions/workflows/ci.yml/badge.svg)](https://github.com/upgradedev/claimscene/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Live app](https://img.shields.io/badge/live-Cloud%20Run-4285F4)](https://claimscene-147595510158.europe-west1.run.app)
+[![Demo video](https://img.shields.io/badge/demo-YouTube-FF0000)](https://youtu.be/nc0sY2RRYcY)
+[![Devpost](https://img.shields.io/badge/Devpost-submission-003E54)](https://devpost.com/software/claimscene)
+
 **Honest accident documentation & illustration.** Photos of an accident go in.
 Out comes a constrained scene description, a deterministic top-down schematic,
 a cinematic AI illustration that is explicitly sealed as *"AI-generated

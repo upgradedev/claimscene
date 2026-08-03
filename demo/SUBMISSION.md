@@ -25,8 +25,7 @@ close that names both partners. The ports-and-adapters beat is counted under
 production readiness and also shows the live B2 and Genblaze adapters.
 It is built from `demo/claimscene-demo.beats.json` by `scripts/build_video.py` and
 re-verified in CI by `scripts/check_video.py` (A/V-sync + caption-order gate).
-TODO(owner): upload `demo/claimscene-demo.mp4` to YouTube (public, < 3 min, no
-copyrighted music), then paste the URL here and on the Devpost form.
+Watch it: https://youtu.be/nc0sY2RRYcY
 
 ## About the project (Markdown story)
 
@@ -94,14 +93,17 @@ First-notice-of-loss integrations, multi-incident case files, a reviewer audit t
 ## Additional info (judges/organizers)
 - App URL: https://claimscene-147595510158.europe-west1.run.app
 - GitHub repo URL: https://github.com/upgradedev/claimscene
+- Demo video URL: https://youtu.be/nc0sY2RRYcY
 - Providers and models: see the table above (GMI Cloud gemma-4-31b-it / gemini-3.5-flash, Nebius Qwen2.5-VL-72B, pixverse-v6-i2v, Kling-Image2Video-V2.1-Master).
 - B2 and Genblaze usage: see the two sections above.
 
-## Owner checklist (not done here)
-1. Upload demo video to YouTube (public, < 3 min), paste URL into Project details + this file.
-2. Upload gallery images.
-3. Accept T&C + Submit project on Devpost before Aug 3, 5:00pm EDT (edits allowed after submit until the deadline).
-4. Keep the app reachable through Aug 11, 5:00pm EDT (judging).
+## Owner checklist
+1. ~~Upload demo video to YouTube, paste URL into Project details + this file.~~
+   Done: https://youtu.be/nc0sY2RRYcY
+2. ~~Upload gallery images.~~ Done.
+3. ~~Accept T&C + Submit project on Devpost.~~ Submitted:
+   https://devpost.com/software/claimscene
+4. Keep the app reachable through Aug 11, 5:00pm EDT (judging). Still open.
 
 Already done (verified 2026-07-23): the `claimscene` B2 bucket and a
 write-entitled, scoped application key are provisioned, and the live app is
