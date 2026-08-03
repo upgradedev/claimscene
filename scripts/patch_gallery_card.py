@@ -44,6 +44,11 @@ Spec JSON shape (see demo/assets/src/*.patch.json for real examples):
   ]
 }
 
+``fill_color`` and ``text_color`` may also be set on an individual patch,
+overriding the spec-level pair for that patch only. A card is not always one
+palette: the architecture card's amber stat row and its grey adapter text sit
+on different box fills, so patching both in one pass needs per-patch colours.
+
 Each patch's ``erase_box`` and ink anchors were measured once, directly from
 the shipped PNG's pixels (amber-glyph bounding boxes), not eyeballed -- see
 the PR description for the measurement method. Re-derive them the same way
@@ -117,6 +122,12 @@ def apply_patch_spec(spec: dict, spec_path: str) -> str:
     draw = ImageDraw.Draw(img)
 
     for patch in spec["patches"]:
+        # Per-patch colour overrides. A card is not always one palette: the
+        # architecture card's amber stat row and its grey adapter text sit on
+        # different box fills, so a single spec-level pair cannot patch both.
+        # Defaults keep every existing spec byte-identical in behaviour.
+        p_fill = tuple(patch.get("fill_color", fill_color))
+        p_text = tuple(patch.get("text_color", text_color))
         target_h = patch["ink_bottom_y"] - patch["ink_top_y"]
         size = find_font_size(draw, patch["new_text"], font_path, target_h)
         font = ImageFont.truetype(font_path, size)
@@ -141,8 +152,8 @@ def apply_patch_spec(spec: dict, spec_path: str) -> str:
             min(erase_box[0], text_box[0]), min(erase_box[1], text_box[1]),
             max(erase_box[2], text_box[2]), max(erase_box[3], text_box[3]),
         )
-        draw.rectangle(full_erase, fill=fill_color)
-        draw.text((draw_x, draw_y), patch["new_text"], font=font, fill=text_color)
+        draw.rectangle(full_erase, fill=p_fill)
+        draw.text((draw_x, draw_y), patch["new_text"], font=font, fill=p_text)
         print(f"  [{os.path.basename(spec_path)}] drew {patch['new_text']!r} "
               f"at ({draw_x},{draw_y}) font_size={size} erased={full_erase}")
 
